@@ -1,0 +1,16 @@
+.DS_Store
+node_modules
+dist
+.env
+.env.*
+coverage
+tmp
+*.log
+*.out
+backend/bin
+backend/tmp
+frontend/.vite
+frontend/.cache
+frontend/coverage
+temp.md
+PLAN.md

@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: devops-postgres
+    environment:
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops
+      POSTGRES_DB: devops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: devops-redis
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: devops-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: devops-backend
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    environment:
+      APP_PORT: "8080"
+      APP_ENV: "production"
+      JWT_SECRET: "change-me-in-prod"
+      JWT_EXPIRE_HOURS: "24"
+      POSTGRES_DSN: "host=postgres user=devops password=devops dbname=devops port=5432 sslmode=disable TimeZone=UTC"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/"
+      ANSIBLE_BIN: "ansible-playbook"
+      PLAYBOOK_TMP_DIR: "/tmp/devops-playbooks"
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    container_name: devops-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
