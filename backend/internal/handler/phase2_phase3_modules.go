@@ -2,16 +2,57 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/datatypes"
 
+	"devops-system/backend/internal/ai"
 	"devops-system/backend/internal/cloud"
 	appErr "devops-system/backend/internal/errors"
 	"devops-system/backend/internal/models"
+	"devops-system/backend/internal/pagination"
 	"devops-system/backend/internal/response"
 )
 
-func (h *Handler) ListCloudAccounts(c *gin.Context)  { listByModel[models.CloudAccount](c, h.DB) }
+func (h *Handler) ListCloudAccounts(c *gin.Context) {
+	page := pagination.Parse(c)
+	query := h.DB.Model(&models.CloudAccount{})
+
+	if provider := strings.TrimSpace(c.Query("provider")); provider != "" {
+		query = query.Where("provider = ?", provider)
+	}
+	if region := strings.TrimSpace(c.Query("region")); region != "" {
+		query = query.Where("region = ?", region)
+	}
+	if verifiedRaw := strings.TrimSpace(c.Query("verified")); verifiedRaw != "" {
+		verified, ok := parseCloudAccountVerifiedQuery(verifiedRaw)
+		if !ok {
+			response.Error(c, http.StatusBadRequest, appErr.New(3001, "invalid verified"))
+			return
+		}
+		query = query.Where("is_verified = ?", verified)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where("name LIKE ? OR access_key LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	var (
+		items []models.CloudAccount
+		total int64
+	)
+	if err := query.Count(&total).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	if err := query.Order("id desc").Limit(page.PageSize).Offset(pagination.Offset(page)).Find(&items).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.List(c, items, total, page.Page, page.PageSize)
+}
 func (h *Handler) GetCloudAccount(c *gin.Context)    { getByID[models.CloudAccount](c, h.DB) }
 func (h *Handler) CreateCloudAccount(c *gin.Context) { createByModel[models.CloudAccount](c, h.DB) }
 func (h *Handler) UpdateCloudAccount(c *gin.Context) { updateByModel[models.CloudAccount](c, h.DB) }
@@ -58,12 +99,86 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, appErr.New(4003, "unsupported cloud provider"))
 		return
 	}
-	assets, err := provider.SyncAssets(cloudCred(account))
+	started := time.Now()
+	job := models.CloudSyncJob{
+		AccountID: account.ID,
+		Provider:  account.Provider,
+		Region:    account.Region,
+		Status:    "running",
+		StartedAt: &started,
+		Summary:   datatypes.JSONMap{},
+	}
+	if err := h.DB.Create(&job).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+
+	assets, err := h.collectCloudProviderAssets(provider, cloudCred(account))
 	if err != nil {
+		finished := time.Now()
+		_ = h.DB.Model(&models.CloudSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
+			"status":      "failed",
+			"finished_at": &finished,
+			"summary": datatypes.JSONMap{
+				"error": err.Error(),
+			},
+		}).Error
 		response.Error(c, http.StatusBadRequest, appErr.New(4005, err.Error()))
 		return
 	}
-	response.Success(c, gin.H{"id": id, "assets": assets})
+	cloudAssets, syncSummary, cloudErr := h.syncCloudAssets(account, assets, "CloudAPI")
+	if cloudErr != nil {
+		finished := time.Now()
+		syncSummary["error"] = cloudErr.Error()
+		_ = h.DB.Model(&models.CloudSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
+			"status":      "failed",
+			"finished_at": &finished,
+			"summary":     syncSummary,
+		}).Error
+		response.Internal(c, cloudErr)
+		return
+	}
+
+	cmdbResources, cmdbErr := h.syncCloudResourcesToCMDB(account, assets)
+	if cmdbErr != nil {
+		finished := time.Now()
+		syncSummary["error"] = cmdbErr.Error()
+		syncSummary["providerAssets"] = len(assets)
+		syncSummary["cloudAssets"] = len(cloudAssets)
+		_ = h.DB.Model(&models.CloudSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
+			"status":      "failed",
+			"finished_at": &finished,
+			"summary":     syncSummary,
+		}).Error
+		response.Internal(c, cmdbErr)
+		return
+	}
+	finished := time.Now()
+	syncSummary["providerAssets"] = len(assets)
+	syncSummary["cloudAssets"] = len(cloudAssets)
+	syncSummary["cmdbAssets"] = len(cmdbResources)
+	if err := h.DB.Model(&models.CloudSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
+		"status":      "success",
+		"finished_at": &finished,
+		"summary":     syncSummary,
+	}).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	var savedJob models.CloudSyncJob
+	if err := h.DB.First(&savedJob, job.ID).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"id":            id,
+		"job":           savedJob,
+		"assets":        assets,
+		"cloudAssets":   cloudAssets,
+		"syncSummary":   syncSummary,
+		"cmdbResources": cmdbResources,
+		"cmdbAssets":    asCloudAssetSlice(cmdbResources),
+	})
 }
 
 func (h *Handler) ListTickets(c *gin.Context)  { listByModel[models.Ticket](c, h.DB) }
@@ -143,6 +258,20 @@ func (h *Handler) CheckMiddlewareInstance(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"id": id, "healthy": true})
+}
+
+func parseCloudAccountVerifiedQuery(raw string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes":
+		return true, true
+	case "0", "false", "no":
+		return false, true
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, false
+	}
+	return value, true
 }
 
 func (h *Handler) MiddlewareAction(c *gin.Context) {
@@ -310,6 +439,95 @@ func (h *Handler) AIOpsRCA(c *gin.Context) {
 			"related host flagged in cmdb",
 			"suggested action: scale deployment and limit noisy workload",
 		},
+	})
+}
+
+func (h *Handler) AIOpsProcurementProtocol(c *gin.Context) {
+	if h.Procurement == nil {
+		response.Error(c, http.StatusServiceUnavailable, appErr.New(4010, "procurement engine unavailable"))
+		return
+	}
+	response.Success(c, h.Procurement.ProtocolSpec())
+}
+
+func (h *Handler) AIOpsParseProcurementIntent(c *gin.Context) {
+	if h.Procurement == nil {
+		response.Error(c, http.StatusServiceUnavailable, appErr.New(4010, "procurement engine unavailable"))
+		return
+	}
+	var req ai.ProcurementNLRequest
+	if !bindJSON(c, &req) {
+		return
+	}
+	req.Message = strings.TrimSpace(req.Message)
+	if req.Message == "" {
+		response.Error(c, http.StatusBadRequest, appErr.New(3001, "message is required"))
+		return
+	}
+	intent, clarifications, err := h.Procurement.ParseIntent(req)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, appErr.New(4008, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{
+		"protocolVersion": ai.ProcurementProtocolVersion,
+		"intent":          intent,
+		"clarifications":  clarifications,
+		"next":            "plan",
+	})
+}
+
+func (h *Handler) AIOpsBuildProcurementPlan(c *gin.Context) {
+	if h.Procurement == nil {
+		response.Error(c, http.StatusServiceUnavailable, appErr.New(4010, "procurement engine unavailable"))
+		return
+	}
+	var req struct {
+		Intent ai.ProcurementIntent `json:"intent"`
+	}
+	if !bindJSON(c, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Intent.RawMessage) == "" {
+		response.Error(c, http.StatusBadRequest, appErr.New(3001, "intent.rawMessage is required"))
+		return
+	}
+	plan, err := h.Procurement.BuildPlan(req.Intent)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, appErr.New(4009, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{
+		"protocolVersion": ai.ProcurementProtocolVersion,
+		"plan":            plan,
+		"next":            "execute",
+	})
+}
+
+func (h *Handler) AIOpsExecuteProcurementPlan(c *gin.Context) {
+	if h.Procurement == nil {
+		response.Error(c, http.StatusServiceUnavailable, appErr.New(4010, "procurement engine unavailable"))
+		return
+	}
+	var req struct {
+		Plan   ai.ProcurementPlan `json:"plan"`
+		DryRun bool               `json:"dryRun"`
+	}
+	if !bindJSON(c, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Plan.PlanID) == "" {
+		response.Error(c, http.StatusBadRequest, appErr.New(3001, "plan.planId is required"))
+		return
+	}
+	result, err := h.Procurement.ExecutePlan(req.Plan, req.DryRun)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, appErr.New(4011, err.Error()))
+		return
+	}
+	response.Success(c, gin.H{
+		"protocolVersion": ai.ProcurementProtocolVersion,
+		"result":          result,
 	})
 }
 

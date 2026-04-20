@@ -55,6 +55,95 @@ components:
           type: integer
         pageSize:
           type: integer
+    CmdbResource:
+      type: object
+      properties:
+        id:
+          type: integer
+        ci_id:
+          type: string
+        type:
+          type: string
+        name:
+          type: string
+        cloud:
+          type: string
+        region:
+          type: string
+        env:
+          type: string
+        owner:
+          type: string
+        lifecycle:
+          type: string
+        source:
+          type: string
+          enum: [IaC, CloudAPI, K8s, APM, Manual]
+        last_seen_at:
+          type: string
+          format: date-time
+        attributes:
+          type: object
+          additionalProperties: true
+    CmdbRelation:
+      type: object
+      properties:
+        id:
+          type: integer
+        from_ci_id:
+          type: string
+        to_ci_id:
+          type: string
+        relation_type:
+          type: string
+          enum:
+            - deployed_on
+            - runs_in
+            - connects_to
+            - publishes_to
+            - consumes_from
+            - fronted_by
+            - resolves_via
+            - stores_in
+            - owned_by
+            - provisioned_by
+        direction:
+          type: string
+          enum: [outbound, inbound, bidirectional]
+        criticality:
+          type: string
+          enum: [P0, P1, P2, P3]
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        evidence:
+          type: object
+          additionalProperties: true
+        updated_at:
+          type: string
+          format: date-time
+    CmdbSyncJob:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, success, failed]
+        source_priority:
+          type: array
+          items:
+            type: string
+            enum: [IaC, CloudAPI, K8s, APM, Manual]
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
 paths:
   /healthz:
     get:
@@ -454,6 +543,246 @@ paths:
       responses:
         "200":
           description: ok
+    post:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: create cmdb resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CmdbResource"
+      responses:
+        "200":
+          description: created
+  /cmdb/categories:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: list cmdb categories
+      responses:
+        "200":
+          description: ok
+    post:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: create cmdb category
+      responses:
+        "200":
+          description: created
+  /cmdb/tags:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: list cmdb tags
+      responses:
+        "200":
+          description: ok
+    post:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: create cmdb tag
+      responses:
+        "200":
+          description: created
+  /cmdb/resources/{id}/tags:
+    post:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: bind tags to cmdb resource
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tagIds:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        "200":
+          description: ok
+  /cmdb/relations:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: list cmdb relations
+      responses:
+        "200":
+          description: ok
+    post:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: create cmdb relation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CmdbRelation"
+      responses:
+        "200":
+          description: created
+  /cmdb/resources/{id}/upstream:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: get resource upstream dependencies
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ok
+  /cmdb/resources/{id}/downstream:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: get resource downstream dependencies
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ok
+  /cmdb/topology/{application}:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: get application dependency topology
+      parameters:
+        - in: path
+          name: application
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+  /cmdb/impact/{ciId}:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: analyze impact scope by ci
+      parameters:
+        - in: path
+          name: ciId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+  /cmdb/regions/{region}/failover:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: analyze region failover coverage
+      parameters:
+        - in: path
+          name: region
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+  /cmdb/change-impact/{releaseId}:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: analyze release change impact
+      parameters:
+        - in: path
+          name: releaseId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+  /cmdb/sync/jobs:
+    post:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: create cmdb sync job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sources:
+                  type: array
+                  items:
+                    type: string
+                    enum: [IaC, CloudAPI, K8s, APM, Manual]
+                fullScan:
+                  type: boolean
+      responses:
+        "200":
+          description: accepted
+  /cmdb/sync/jobs/{id}:
+    get:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: get cmdb sync job detail
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ok
+  /cmdb/sync/jobs/{id}/retry:
+    post:
+      tags: [CMDB]
+      security:
+        - bearerAuth: []
+      summary: retry cmdb sync job
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: accepted
   /tasks:
     get:
       tags: [Task]
@@ -501,6 +830,38 @@ paths:
       security:
         - bearerAuth: []
       summary: list cloud accounts
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - in: query
+          name: keyword
+          schema:
+            type: string
+          description: match on account name or access key
+        - in: query
+          name: provider
+          schema:
+            type: string
+          description: cloud provider, e.g. aws/aliyun/tencent/huawei
+        - in: query
+          name: region
+          schema:
+            type: string
+        - in: query
+          name: verified
+          schema:
+            type: string
+            enum: ["true", "false", "1", "0", "yes", "no"]
+          description: verification status filter
       responses:
         "200":
           description: ok
@@ -522,3 +883,39 @@ paths:
       responses:
         "200":
           description: response
+  /aiops/procurement/protocol:
+    get:
+      tags: [AIOps]
+      security:
+        - bearerAuth: []
+      summary: get aiops procurement protocol spec
+      responses:
+        "200":
+          description: protocol spec
+  /aiops/procurement/intents:
+    post:
+      tags: [AIOps]
+      security:
+        - bearerAuth: []
+      summary: parse procurement intent from natural language
+      responses:
+        "200":
+          description: parsed intent
+  /aiops/procurement/plans:
+    post:
+      tags: [AIOps]
+      security:
+        - bearerAuth: []
+      summary: build procurement execution plan
+      responses:
+        "200":
+          description: procurement plan
+  /aiops/procurement/executions:
+    post:
+      tags: [AIOps]
+      security:
+        - bearerAuth: []
+      summary: execute procurement plan (supports dry-run)
+      responses:
+        "200":
+          description: execution result

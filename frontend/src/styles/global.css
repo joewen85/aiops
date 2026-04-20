@@ -154,6 +154,16 @@ h4 {
   min-width: 0;
 }
 
+.cloud-module-card {
+  grid-template-rows: auto auto auto;
+  min-height: 0;
+  gap: 8px;
+}
+
+.cloud-module-card .rbac-module-header {
+  margin-bottom: 4px;
+}
+
 .rbac-module-header {
   display: flex;
   justify-content: space-between;
@@ -407,12 +417,18 @@ h4 {
 
 .form-grid input,
 .form-grid select,
+.form-grid textarea,
 .rbac-actions select {
   border-radius: 10px;
   border: 1px solid var(--border);
   padding: 8px 10px;
   background: transparent;
   color: var(--text);
+}
+
+.form-grid textarea {
+  min-height: 72px;
+  resize: vertical;
 }
 
 .rbac-header-row {
@@ -427,6 +443,41 @@ h4 {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.cloud-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.cloud-filter-control {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--text);
+  min-width: 150px;
+  height: 38px;
+  flex: 1 1 160px;
+}
+
+.cloud-filter-keyword {
+  min-width: 220px;
+  flex: 2 1 260px;
+}
+
+.cloud-filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cloud-module-card .rbac-table-wrapper {
+  margin-top: 2px;
 }
 
 .rbac-binding-actions {
@@ -567,6 +618,16 @@ h4 {
   gap: 4px;
 }
 
+.cmdb-analysis {
+  margin: 0;
+  padding: 10px;
+  min-height: 220px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .btn {
   border: 1px solid var(--border);
   background: var(--bg-elevated);
@@ -659,6 +720,9 @@ h4 {
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
   }
+  .cloud-filter-control {
+    flex: 1 1 180px;
+  }
   .rbac-table {
     min-width: 560px;
   }
@@ -700,6 +764,19 @@ h4 {
   }
   .rbac-binding-search {
     min-width: 0;
+    width: 100%;
+  }
+  .cloud-filter-bar {
+    align-items: stretch;
+  }
+  .cloud-filter-control {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .cloud-filter-keyword {
+    flex: 1 1 100%;
+  }
+  .cloud-filter-actions {
     width: 100%;
   }
   .table-settings-columns {

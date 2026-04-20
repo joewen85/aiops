@@ -25,7 +25,9 @@ type Handler struct {
 	Executor       executor.Runner
 	Config         config.Config
 	CloudProviders map[string]cloud.Provider
+	CloudCollector cloud.ResourceCollector
 	ModelProviders map[string]ai.ModelProvider
+	Procurement    ai.ProcurementEngine
 }
 
 func New(
@@ -53,10 +55,12 @@ func New(
 			"tencent": cloud.NewStubProvider("tencent"),
 			"huawei":  cloud.NewStubProvider("huawei"),
 		},
+		CloudCollector: cloud.NewDefaultResourceCollector(),
 		ModelProviders: map[string]ai.ModelProvider{
 			"openai":    ai.OpenAIProvider{},
 			"anthropic": ai.AnthropicProvider{},
 		},
+		Procurement: ai.NewStubProcurementEngine(),
 	}
 }
 

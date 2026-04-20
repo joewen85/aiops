@@ -71,10 +71,18 @@ type ResourceCategory struct {
 
 type ResourceItem struct {
 	BaseModel
+	CIID       string                 `gorm:"size:255;uniqueIndex;not null" json:"ciId"`
+	Type       string                 `gorm:"size:64;index;not null" json:"type"`
 	Name       string                 `gorm:"size:128;not null" json:"name"`
 	CategoryID uint                   `json:"categoryId"`
+	Cloud      string                 `gorm:"size:32;index" json:"cloud"`
+	Region     string                 `gorm:"size:64;index" json:"region"`
+	Env        string                 `gorm:"size:32;index;default:prod" json:"env"`
+	Owner      string                 `gorm:"size:128;index" json:"owner"`
+	Lifecycle  string                 `gorm:"size:32;default:active" json:"lifecycle"`
+	Source     string                 `gorm:"size:32;index;default:Manual" json:"source"`
+	LastSeenAt time.Time              `gorm:"index" json:"lastSeenAt"`
 	Attributes datatypes.JSONMap      `gorm:"type:jsonb" json:"attributes"`
-	Env        string                 `gorm:"size:32;default:prod" json:"env"`
 	Extra      map[string]interface{} `gorm:"-" json:"extra,omitempty"`
 }
 
@@ -86,6 +94,50 @@ type Tag struct {
 type ResourceTag struct {
 	ResourceID uint `gorm:"primaryKey" json:"resourceId"`
 	TagID      uint `gorm:"primaryKey" json:"tagId"`
+}
+
+type ResourceRelation struct {
+	BaseModel
+	FromCIID          string            `gorm:"size:255;index;not null" json:"fromCiId"`
+	ToCIID            string            `gorm:"size:255;index;not null" json:"toCiId"`
+	RelationType      string            `gorm:"size:64;index;not null" json:"relationType"`
+	Direction         string            `gorm:"size:16;default:outbound" json:"direction"`
+	Criticality       string            `gorm:"size:8;default:P2" json:"criticality"`
+	Confidence        float64           `gorm:"default:1" json:"confidence"`
+	Evidence          datatypes.JSONMap `gorm:"type:jsonb" json:"evidence"`
+	RelationUpdatedAt time.Time         `gorm:"index" json:"relationUpdatedAt"`
+}
+
+type ResourceEvidence struct {
+	BaseModel
+	CIID       string            `gorm:"size:255;index;not null" json:"ciId"`
+	RelationID *uint             `gorm:"index" json:"relationId,omitempty"`
+	Source     string            `gorm:"size:32;index;not null" json:"source"`
+	RawID      string            `gorm:"size:255;index" json:"rawId"`
+	Payload    datatypes.JSONMap `gorm:"type:jsonb" json:"payload"`
+	ObservedAt time.Time         `gorm:"index" json:"observedAt"`
+}
+
+type ResourceSyncJob struct {
+	BaseModel
+	Status           string            `gorm:"size:32;index;default:pending" json:"status"`
+	RequestedSources datatypes.JSON    `gorm:"type:jsonb" json:"requestedSources"`
+	FullScan         bool              `gorm:"default:false" json:"fullScan"`
+	StartedAt        *time.Time        `gorm:"index" json:"startedAt,omitempty"`
+	FinishedAt       *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
+	Summary          datatypes.JSONMap `gorm:"type:jsonb" json:"summary"`
+}
+
+type ResourceSyncJobItem struct {
+	BaseModel
+	JobID        uint              `gorm:"index;not null" json:"jobId"`
+	CIID         string            `gorm:"size:255;index;not null" json:"ciId"`
+	Source       string            `gorm:"size:32;index;not null" json:"source"`
+	Action       string            `gorm:"size:32" json:"action"`
+	Status       string            `gorm:"size:32;index" json:"status"`
+	Message      string            `gorm:"size:255" json:"message"`
+	QualityScore float64           `gorm:"default:1" json:"qualityScore"`
+	Data         datatypes.JSONMap `gorm:"type:jsonb" json:"data"`
 }
 
 type Task struct {
@@ -124,6 +176,33 @@ type CloudAccount struct {
 	SecretKey  string `gorm:"size:255;not null" json:"secretKey"`
 	Region     string `gorm:"size:64" json:"region"`
 	IsVerified bool   `gorm:"default:false" json:"isVerified"`
+}
+
+type CloudAsset struct {
+	BaseModel
+	Provider     string            `gorm:"size:32;index;not null;uniqueIndex:idx_cloud_asset_unique" json:"provider"`
+	AccountID    uint              `gorm:"index;not null;default:0;uniqueIndex:idx_cloud_asset_unique" json:"accountId"`
+	Region       string            `gorm:"size:64;index;uniqueIndex:idx_cloud_asset_unique" json:"region"`
+	Type         string            `gorm:"size:64;index;not null;uniqueIndex:idx_cloud_asset_unique" json:"type"`
+	ResourceID   string            `gorm:"size:255;index;not null;uniqueIndex:idx_cloud_asset_unique" json:"resourceId"`
+	Name         string            `gorm:"size:128;index;not null" json:"name"`
+	Status       string            `gorm:"size:32;index;default:unknown" json:"status"`
+	Source       string            `gorm:"size:32;index;default:Manual" json:"source"`
+	Tags         datatypes.JSONMap `gorm:"type:jsonb" json:"tags"`
+	Metadata     datatypes.JSONMap `gorm:"type:jsonb" json:"metadata"`
+	LastSyncedAt *time.Time        `gorm:"index" json:"lastSyncedAt,omitempty"`
+	ExpiresAt    *time.Time        `gorm:"index" json:"expiresAt,omitempty"`
+}
+
+type CloudSyncJob struct {
+	BaseModel
+	AccountID  uint              `gorm:"index;not null" json:"accountId"`
+	Provider   string            `gorm:"size:32;index;not null" json:"provider"`
+	Region     string            `gorm:"size:64;index" json:"region"`
+	Status     string            `gorm:"size:32;index;default:running" json:"status"`
+	StartedAt  *time.Time        `gorm:"index" json:"startedAt,omitempty"`
+	FinishedAt *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
+	Summary    datatypes.JSONMap `gorm:"type:jsonb" json:"summary"`
 }
 
 type Ticket struct {
@@ -239,10 +318,16 @@ func AutoMigrateModels() []interface{} {
 		&ResourceItem{},
 		&Tag{},
 		&ResourceTag{},
+		&ResourceRelation{},
+		&ResourceEvidence{},
+		&ResourceSyncJob{},
+		&ResourceSyncJobItem{},
 		&Task{},
 		&Playbook{},
 		&TaskExecutionLog{},
 		&CloudAccount{},
+		&CloudAsset{},
+		&CloudSyncJob{},
 		&Ticket{},
 		&Event{},
 		&InAppMessage{},

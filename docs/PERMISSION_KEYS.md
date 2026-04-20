@@ -114,6 +114,7 @@
   - `button.aiops.model.create|update|delete`
   - `button.aiops.chat.send`
   - `button.aiops.rca.execute`
+  - `button.aiops.procurement.intent_parse|plan_create|execute`
 
 ## 5. 现有 API 权限标识（按路由全量映射）
 
@@ -292,6 +293,10 @@
 - `api.aiops.model.delete` -> `DELETE /aiops/models/:id`
 - `api.aiops.chat` -> `POST /aiops/chat`
 - `api.aiops.rca` -> `POST /aiops/rca`
+- `api.aiops.procurement.protocol` -> `GET /aiops/procurement/protocol`
+- `api.aiops.procurement.intent_parse` -> `POST /aiops/procurement/intents`
+- `api.aiops.procurement.plan_create` -> `POST /aiops/procurement/plans`
+- `api.aiops.procurement.execute` -> `POST /aiops/procurement/executions`
 
 ### 5.15 审计
 

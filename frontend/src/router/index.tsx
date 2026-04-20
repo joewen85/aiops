@@ -4,6 +4,8 @@ import { createBrowserRouter } from "react-router-dom";
 import { MenuRouteGuard } from "@/components/MenuRouteGuard";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/layouts/AppLayout";
+import { CMDBPage } from "@/pages/CMDBPage";
+import { CloudPage } from "@/pages/CloudPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { ModulePage } from "@/pages/ModulePage";
@@ -27,10 +29,10 @@ export const router = createBrowserRouter([
           { index: true, element: withMenuGuard("menu.dashboard", <DashboardPage />) },
           { path: "rbac", element: withMenuGuard("menu.rbac", <RBACPage />) },
           { path: "users", element: withMenuGuard("menu.users", <UsersPage />) },
-          { path: "cmdb", element: withMenuGuard("menu.cmdb", <ModulePage />) },
+          { path: "cmdb", element: withMenuGuard("menu.cmdb", <CMDBPage />) },
           { path: "tasks", element: withMenuGuard("menu.tasks", <ModulePage />) },
           { path: "messages", element: withMenuGuard("menu.messages", <ModulePage />) },
-          { path: "cloud", element: withMenuGuard("menu.cloud", <ModulePage />) },
+          { path: "cloud", element: withMenuGuard("menu.cloud", <CloudPage />) },
           { path: "tickets", element: withMenuGuard("menu.tickets", <ModulePage />) },
           { path: "docker", element: withMenuGuard("menu.docker", <ModulePage />) },
           { path: "middleware", element: withMenuGuard("menu.middleware", <ModulePage />) },

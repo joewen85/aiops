@@ -61,6 +61,7 @@
 - `/api/v1/task-logs`
 - `/api/v1/audit-logs`
 - `/api/v1/cloud/accounts`
+- `/api/v1/cloud/assets`
 - `/api/v1/tickets`
 - `/api/v1/docker`
 - `/api/v1/middleware`
@@ -70,6 +71,39 @@
 - `/api/v1/tool-market`
 - `/api/v1/aiops`
 - `/ws`
+
+## CMDB 模块接口细化（v1）
+
+- CI 基础：`GET/POST /api/v1/cmdb/categories`、`GET/POST /api/v1/cmdb/resources`、`GET/POST /api/v1/cmdb/tags`、`POST /api/v1/cmdb/resources/:id/tags`
+- 关系图谱：`GET/POST /api/v1/cmdb/relations`、`GET /api/v1/cmdb/resources/:id/upstream`、`GET /api/v1/cmdb/resources/:id/downstream`
+- 影响分析：`GET /api/v1/cmdb/topology/:application`、`GET /api/v1/cmdb/impact/:ciId`、`GET /api/v1/cmdb/regions/:region/failover`、`GET /api/v1/cmdb/change-impact/:releaseId`
+- 自动采集：`POST /api/v1/cmdb/sync/jobs`、`GET /api/v1/cmdb/sync/jobs/:id`、`POST /api/v1/cmdb/sync/jobs/:id/retry`
+- 采集优先级：`IaC > Cloud API > K8s > APM > Manual`
+- 唯一标识：云主机=`cloud:account:region:instance_id`，K8s Workload=`cloud:region:cluster:namespace:kind:name`，托管 DB=`cloud:account:region:engine:instance_id`
+
+## 多云管理模块接口细化（v1）
+
+- 云账号：`GET/POST /api/v1/cloud/accounts`、`GET/PUT/DELETE /api/v1/cloud/accounts/:id`
+  - 账号列表过滤：`keyword/provider/region/verified`
+  - `verified` 支持：`true/false/1/0/yes/no`
+- 账号动作：`POST /api/v1/cloud/accounts/:id/verify`、`POST /api/v1/cloud/accounts/:id/sync`
+- 账号资源：`GET /api/v1/cloud/accounts/:id/assets`（支持 `region/type` 过滤）
+- 云资源：`GET/POST /api/v1/cloud/assets`、`GET/PUT/DELETE /api/v1/cloud/assets/:id`
+- 资源类型（首批基础能力）：`CloudServer/MySQL/PrivateNetwork/ObjectStorage/FileStorage/ContainerService/LoadBalancer/DNS/SSLCertificate/LogService`
+
+## AIOps 自然语言采购协议（预留）
+
+- 协议版本：`aiops.procurement.v1alpha1`
+- 协议查询：`GET /api/v1/aiops/procurement/protocol`
+- 意图解析：`POST /api/v1/aiops/procurement/intents`
+  - 输入：自然语言 `message` + 可选 `preferredProvider/region/quantity/budgetLimit`
+  - 输出：结构化 `intent`（`action/provider/resourceType/region/quantity`）+ 待澄清项
+- 计划生成：`POST /api/v1/aiops/procurement/plans`
+  - 输入：`intent`
+  - 输出：执行 `plan`（步骤、预算估算、审批要求）
+- 执行接口：`POST /api/v1/aiops/procurement/executions`
+  - 输入：`plan` + `dryRun`
+  - 输出：`result`（`dry_run/accepted`）
 
 ## 初始账号
 

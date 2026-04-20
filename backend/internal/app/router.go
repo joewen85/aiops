@@ -148,12 +148,24 @@ func registerCMDBRoutes(r *gin.RouterGroup, h *handler.Handler) {
 	cmdb.PUT("/resources/:id", h.UpdateResource)
 	cmdb.DELETE("/resources/:id", h.DeleteResource)
 	cmdb.POST("/resources/:id/tags", h.BindResourceTags)
+	cmdb.GET("/resources/:id/upstream", h.GetResourceUpstream)
+	cmdb.GET("/resources/:id/downstream", h.GetResourceDownstream)
 
 	cmdb.GET("/tags", h.ListTags)
 	cmdb.POST("/tags", h.CreateTag)
 	cmdb.GET("/tags/:id", h.GetTag)
 	cmdb.PUT("/tags/:id", h.UpdateTag)
 	cmdb.DELETE("/tags/:id", h.DeleteTag)
+
+	cmdb.GET("/relations", h.ListResourceRelations)
+	cmdb.POST("/relations", h.CreateResourceRelation)
+	cmdb.GET("/topology/:application", h.GetApplicationTopology)
+	cmdb.GET("/impact/:ciId", h.GetResourceImpact)
+	cmdb.GET("/regions/:region/failover", h.GetRegionFailover)
+	cmdb.GET("/change-impact/:releaseId", h.GetChangeImpact)
+	cmdb.POST("/sync/jobs", h.CreateCMDBSyncJob)
+	cmdb.GET("/sync/jobs/:id", h.GetCMDBSyncJob)
+	cmdb.POST("/sync/jobs/:id/retry", h.RetryCMDBSyncJob)
 }
 
 func registerTaskRoutes(r *gin.RouterGroup, h *handler.Handler) {
@@ -188,6 +200,12 @@ func registerPhase2Routes(r *gin.RouterGroup, h *handler.Handler) {
 	r.DELETE("/cloud/accounts/:id", h.DeleteCloudAccount)
 	r.POST("/cloud/accounts/:id/verify", h.VerifyCloudAccount)
 	r.POST("/cloud/accounts/:id/sync", h.SyncCloudAccount)
+	r.GET("/cloud/accounts/:id/assets", h.ListCloudAccountAssets)
+	r.GET("/cloud/assets", h.ListCloudAssets)
+	r.POST("/cloud/assets", h.CreateCloudAsset)
+	r.GET("/cloud/assets/:id", h.GetCloudAsset)
+	r.PUT("/cloud/assets/:id", h.UpdateCloudAsset)
+	r.DELETE("/cloud/assets/:id", h.DeleteCloudAsset)
 
 	r.GET("/tickets", h.ListTickets)
 	r.POST("/tickets", h.CreateTicket)
@@ -262,4 +280,8 @@ func registerPhase3Routes(r *gin.RouterGroup, h *handler.Handler) {
 
 	r.POST("/aiops/chat", h.AIOpsChat)
 	r.POST("/aiops/rca", h.AIOpsRCA)
+	r.GET("/aiops/procurement/protocol", h.AIOpsProcurementProtocol)
+	r.POST("/aiops/procurement/intents", h.AIOpsParseProcurementIntent)
+	r.POST("/aiops/procurement/plans", h.AIOpsBuildProcurementPlan)
+	r.POST("/aiops/procurement/executions", h.AIOpsExecuteProcurementPlan)
 }

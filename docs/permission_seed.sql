@@ -407,6 +407,18 @@ SELECT '执行AIOps根因分析', 'button.aiops.rca.execute', 'click', 'button',
 WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'button' AND key = 'button.aiops.rca.execute');
 
 INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
+SELECT '解析AIOps采购意图', 'button.aiops.procurement.intent_parse', 'click', 'button', 'button.aiops.procurement.intent_parse', '*', '*', '*', '按钮权限：解析AIOps采购意图', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'button' AND key = 'button.aiops.procurement.intent_parse');
+
+INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
+SELECT '生成AIOps采购计划', 'button.aiops.procurement.plan_create', 'click', 'button', 'button.aiops.procurement.plan_create', '*', '*', '*', '按钮权限：生成AIOps采购计划', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'button' AND key = 'button.aiops.procurement.plan_create');
+
+INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
+SELECT '执行AIOps采购计划', 'button.aiops.procurement.execute', 'click', 'button', 'button.aiops.procurement.execute', '*', '*', '*', '按钮权限：执行AIOps采购计划', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'button' AND key = 'button.aiops.procurement.execute');
+
+INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
 SELECT '查询用户列表', '/api/v1/users', 'GET', 'api', 'api.users.user.list', '*', '*', '*', 'API权限：查询用户列表', NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'api' AND key = 'api.users.user.list');
 
@@ -933,6 +945,22 @@ WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'api' AND key = 'api.ai
 INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
 SELECT 'AIOps根因分析', '/api/v1/aiops/rca', 'POST', 'api', 'api.aiops.rca', '*', '*', '*', 'API权限：AIOps根因分析', NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'api' AND key = 'api.aiops.rca');
+
+INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
+SELECT '查询AIOps采购协议', '/api/v1/aiops/procurement/protocol', 'GET', 'api', 'api.aiops.procurement.protocol', '*', '*', '*', 'API权限：查询AIOps采购协议', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'api' AND key = 'api.aiops.procurement.protocol');
+
+INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
+SELECT '解析AIOps采购意图', '/api/v1/aiops/procurement/intents', 'POST', 'api', 'api.aiops.procurement.intent_parse', '*', '*', '*', 'API权限：解析AIOps采购意图', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'api' AND key = 'api.aiops.procurement.intent_parse');
+
+INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
+SELECT '生成AIOps采购计划', '/api/v1/aiops/procurement/plans', 'POST', 'api', 'api.aiops.procurement.plan_create', '*', '*', '*', 'API权限：生成AIOps采购计划', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'api' AND key = 'api.aiops.procurement.plan_create');
+
+INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
+SELECT '执行AIOps采购计划', '/api/v1/aiops/procurement/executions', 'POST', 'api', 'api.aiops.procurement.execute', '*', '*', '*', 'API权限：执行AIOps采购计划', NOW(), NOW()
+WHERE NOT EXISTS (SELECT 1 FROM permissions WHERE type = 'api' AND key = 'api.aiops.procurement.execute');
 
 INSERT INTO permissions (name, resource, action, type, key, dept_scope, resource_tag_scope, env_scope, description, created_at, updated_at)
 SELECT '查询审计日志列表', '/api/v1/audit-logs', 'GET', 'api', 'api.audit.log.list', '*', '*', '*', 'API权限：查询审计日志列表', NOW(), NOW()

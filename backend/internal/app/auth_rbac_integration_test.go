@@ -16,7 +16,9 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"devops-system/backend/internal/ai"
 	"devops-system/backend/internal/auth"
+	"devops-system/backend/internal/cloud"
 	"devops-system/backend/internal/config"
 	"devops-system/backend/internal/handler"
 	"devops-system/backend/internal/models"
@@ -728,6 +730,13 @@ func newRouterForIntegrationTest(t *testing.T) (*gin.Engine, *gorm.DB, *casbin.E
 		DB:       database,
 		JWT:      jwtManager,
 		Enforcer: enforcer,
+		CloudProviders: map[string]cloud.Provider{
+			"aws":     cloud.NewStubProvider("aws"),
+			"aliyun":  cloud.NewStubProvider("aliyun"),
+			"tencent": cloud.NewStubProvider("tencent"),
+			"huawei":  cloud.NewStubProvider("huawei"),
+		},
+		Procurement: ai.NewStubProcurementEngine(),
 	}
 
 	return setupRouter(h, jwtManager, enforcer, database, config.Config{}), database, enforcer

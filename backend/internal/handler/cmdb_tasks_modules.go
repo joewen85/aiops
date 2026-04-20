@@ -13,30 +13,9 @@ import (
 	"devops-system/backend/internal/ws"
 )
 
-func (h *Handler) ListResourceCategories(c *gin.Context) {
-	listByModel[models.ResourceCategory](c, h.DB)
+func (h *Handler) ListTasks(c *gin.Context) {
+	listByModel[models.Task](c, h.DB)
 }
-func (h *Handler) GetResourceCategory(c *gin.Context) { getByID[models.ResourceCategory](c, h.DB) }
-func (h *Handler) CreateResourceCategory(c *gin.Context) {
-	createByModel[models.ResourceCategory](c, h.DB)
-}
-func (h *Handler) UpdateResourceCategory(c *gin.Context) {
-	updateByModel[models.ResourceCategory](c, h.DB)
-}
-func (h *Handler) DeleteResourceCategory(c *gin.Context) {
-	deleteByModel[models.ResourceCategory](c, h.DB)
-}
-func (h *Handler) ListResources(c *gin.Context)  { listByModel[models.ResourceItem](c, h.DB) }
-func (h *Handler) GetResource(c *gin.Context)    { getByID[models.ResourceItem](c, h.DB) }
-func (h *Handler) CreateResource(c *gin.Context) { createByModel[models.ResourceItem](c, h.DB) }
-func (h *Handler) UpdateResource(c *gin.Context) { updateByModel[models.ResourceItem](c, h.DB) }
-func (h *Handler) DeleteResource(c *gin.Context) { deleteByModel[models.ResourceItem](c, h.DB) }
-func (h *Handler) ListTags(c *gin.Context)       { listByModel[models.Tag](c, h.DB) }
-func (h *Handler) GetTag(c *gin.Context)         { getByID[models.Tag](c, h.DB) }
-func (h *Handler) CreateTag(c *gin.Context)      { createByModel[models.Tag](c, h.DB) }
-func (h *Handler) UpdateTag(c *gin.Context)      { updateByModel[models.Tag](c, h.DB) }
-func (h *Handler) DeleteTag(c *gin.Context)      { deleteByModel[models.Tag](c, h.DB) }
-func (h *Handler) ListTasks(c *gin.Context)      { listByModel[models.Task](c, h.DB) }
 func (h *Handler) GetTask(c *gin.Context)        { getByID[models.Task](c, h.DB) }
 func (h *Handler) CreateTask(c *gin.Context)     { createByModel[models.Task](c, h.DB) }
 func (h *Handler) UpdateTask(c *gin.Context)     { updateByModel[models.Task](c, h.DB) }
@@ -48,31 +27,6 @@ func (h *Handler) UpdatePlaybook(c *gin.Context) { updateByModel[models.Playbook
 func (h *Handler) DeletePlaybook(c *gin.Context) { deleteByModel[models.Playbook](c, h.DB) }
 func (h *Handler) ListTaskLogs(c *gin.Context)   { listByModel[models.TaskExecutionLog](c, h.DB) }
 func (h *Handler) GetTaskLog(c *gin.Context)     { getByID[models.TaskExecutionLog](c, h.DB) }
-
-func (h *Handler) BindResourceTags(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	var req struct {
-		TagIDs []uint `json:"tagIds"`
-	}
-	if !bindJSON(c, &req) {
-		return
-	}
-
-	if err := h.DB.Where("resource_id = ?", id).Delete(&models.ResourceTag{}).Error; err != nil {
-		response.Internal(c, err)
-		return
-	}
-	for _, tagID := range req.TagIDs {
-		if err := h.DB.Create(&models.ResourceTag{ResourceID: id, TagID: tagID}).Error; err != nil {
-			response.Internal(c, err)
-			return
-		}
-	}
-	response.Success(c, gin.H{"id": id, "tagIds": req.TagIDs})
-}
 
 func (h *Handler) ExecuteTask(c *gin.Context) {
 	id, ok := parseID(c)

@@ -50,7 +50,12 @@ func (h *Handler) Login(c *gin.Context) {
 
 	var deptID string
 	var dept models.UserDepartment
-	if err := h.DB.Where("user_id = ?", user.ID).First(&dept).Error; err == nil {
+	query := h.DB.Where("user_id = ?", user.ID).Limit(1).Find(&dept)
+	if query.Error != nil {
+		response.Internal(c, query.Error)
+		return
+	}
+	if query.RowsAffected > 0 {
 		deptID = toStringID(dept.DepartmentID)
 	}
 
