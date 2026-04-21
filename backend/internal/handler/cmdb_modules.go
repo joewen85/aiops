@@ -1059,8 +1059,14 @@ func (h *Handler) collectAPMRelationCandidates() []cmdbRelationCandidate {
 }
 
 func (h *Handler) syncCloudResourcesToCMDB(account models.CloudAccount, assets []cloud.Asset) ([]models.ResourceItem, error) {
-	savedResources := make([]models.ResourceItem, 0, len(assets))
+	if len(assets) == 0 {
+		return []models.ResourceItem{}, nil
+	}
+
 	now := time.Now()
+	latestByCIID := make(map[string]models.ResourceItem, len(assets))
+	orderedCIIDs := make([]string, 0, len(assets))
+
 	for _, asset := range assets {
 		resource := models.ResourceItem{
 			Type:       mapCloudAssetToCIType(asset.Type),
@@ -1078,9 +1084,90 @@ func (h *Handler) syncCloudResourcesToCMDB(account models.CloudAccount, assets [
 		if resource.CIID == "" {
 			resource.CIID = fmt.Sprintf("%s:%d:%s:%s", normalizeToken(account.Provider), account.ID, normalizeToken(asset.Type), normalizeToken(asset.ID))
 		}
-		saved, _, upsertErr := h.upsertCMDBResource(resource)
-		if upsertErr != nil {
-			return nil, upsertErr
+		if _, exists := latestByCIID[resource.CIID]; !exists {
+			orderedCIIDs = append(orderedCIIDs, resource.CIID)
+		}
+		latestByCIID[resource.CIID] = normalizeCMDBResource(resource, resource.Source)
+	}
+
+	existingMap, err := h.loadCMDBResourcesMap(orderedCIIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	createItems := make([]models.ResourceItem, 0)
+	type cmdbResourceUpdateOp struct {
+		ID      uint
+		Updates map[string]interface{}
+	}
+	updateOps := make([]cmdbResourceUpdateOp, 0)
+
+	for _, ciID := range orderedCIIDs {
+		input := latestByCIID[ciID]
+		existing, exists := existingMap[ciID]
+		if !exists {
+			createItems = append(createItems, input)
+			continue
+		}
+
+		newPriority := sourcePriority(input.Source)
+		oldPriority := sourcePriority(existing.Source)
+		updates := map[string]interface{}{
+			"last_seen_at": input.LastSeenAt,
+		}
+		if newPriority >= oldPriority {
+			updates["type"] = defaultString(input.Type, existing.Type)
+			updates["name"] = defaultString(input.Name, existing.Name)
+			updates["category_id"] = input.CategoryID
+			updates["cloud"] = defaultString(input.Cloud, existing.Cloud)
+			updates["region"] = defaultString(input.Region, existing.Region)
+			updates["env"] = defaultString(input.Env, existing.Env)
+			updates["owner"] = defaultString(input.Owner, existing.Owner)
+			updates["lifecycle"] = defaultString(input.Lifecycle, existing.Lifecycle)
+			updates["source"] = normalizeCMDBSource(input.Source)
+			updates["attributes"] = mergeJSONMap(existing.Attributes, input.Attributes, true)
+		} else {
+			updates["attributes"] = mergeJSONMap(existing.Attributes, input.Attributes, false)
+		}
+		updateOps = append(updateOps, cmdbResourceUpdateOp{
+			ID:      existing.ID,
+			Updates: updates,
+		})
+	}
+
+	if err := h.DB.Transaction(func(tx *gorm.DB) error {
+		const batchSize = 200
+		if len(createItems) > 0 {
+			for start := 0; start < len(createItems); start += batchSize {
+				end := start + batchSize
+				if end > len(createItems) {
+					end = len(createItems)
+				}
+				chunk := createItems[start:end]
+				if err := tx.Create(&chunk).Error; err != nil {
+					return err
+				}
+			}
+		}
+		for _, op := range updateOps {
+			if err := tx.Model(&models.ResourceItem{}).Where("id = ?", op.ID).Updates(op.Updates).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	savedMap, err := h.loadCMDBResourcesMap(orderedCIIDs)
+	if err != nil {
+		return nil, err
+	}
+	savedResources := make([]models.ResourceItem, 0, len(orderedCIIDs))
+	for _, ciID := range orderedCIIDs {
+		saved, ok := savedMap[ciID]
+		if !ok {
+			continue
 		}
 		savedResources = append(savedResources, saved)
 	}
@@ -1472,7 +1559,7 @@ func normalizeCloudResourceMetadata(metadata map[string]interface{}) datatypes.J
 	if cpu := readMapString(metadata, "cpu", "vcpu", "vCpu", "cpuCore", "cpuCores"); cpu != "" {
 		result["cpu"] = cpu
 	}
-	if memory := readMapString(metadata, "memory", "memoryGb", "memoryGB", "mem"); memory != "" {
+	if memory := normalizeMemoryMetadata(metadata); memory != "" {
 		result["memory"] = memory
 	}
 	if disk := readMapString(metadata, "disk", "diskGb", "diskGB", "diskSize"); disk != "" {
@@ -1509,6 +1596,138 @@ func readMapString(values map[string]interface{}, keys ...string) string {
 		return text
 	}
 	return ""
+}
+
+func normalizeMemoryMetadata(metadata map[string]interface{}) string {
+	if memoryRaw, ok := readMapValue(metadata, "memory", "memoryGb", "memoryGB", "mem"); ok {
+		if normalized := normalizeMemoryToGB(memoryRaw, false); normalized != "" {
+			return normalized
+		}
+	}
+	if memoryMBRaw, ok := readMapValue(metadata, "memoryMB", "memoryMb", "memMB"); ok {
+		if normalized := normalizeMemoryToGB(memoryMBRaw, true); normalized != "" {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func readMapValue(values map[string]interface{}, keys ...string) (interface{}, bool) {
+	for _, key := range keys {
+		raw, ok := values[key]
+		if !ok || raw == nil {
+			continue
+		}
+		if text, ok := raw.(string); ok {
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+		}
+		return raw, true
+	}
+	return nil, false
+}
+
+func normalizeMemoryToGB(raw interface{}, fromMB bool) string {
+	if raw == nil {
+		return ""
+	}
+	switch value := raw.(type) {
+	case string:
+		text := strings.TrimSpace(value)
+		if text == "" || text == "<nil>" {
+			return ""
+		}
+		if fromMB {
+			normalized := strings.ToLower(strings.ReplaceAll(text, " ", ""))
+			for _, suffix := range []string{"mib", "mb", "m"} {
+				if strings.HasSuffix(normalized, suffix) {
+					normalized = strings.TrimSuffix(normalized, suffix)
+					break
+				}
+			}
+			if parsed, err := strconv.ParseFloat(normalized, 64); err == nil {
+				return formatMemoryGBText(parsed / 1024)
+			}
+		}
+		if containsAlphabet(text) {
+			return text
+		}
+		if parsed, err := strconv.ParseFloat(text, 64); err == nil {
+			if fromMB {
+				return formatMemoryGBText(parsed / 1024)
+			}
+			return formatMemoryGBText(parsed)
+		}
+		return text
+	case int:
+		if fromMB {
+			return formatMemoryGBText(float64(value) / 1024)
+		}
+		return formatMemoryGBText(float64(value))
+	case int8:
+		if fromMB {
+			return formatMemoryGBText(float64(value) / 1024)
+		}
+		return formatMemoryGBText(float64(value))
+	case int16:
+		if fromMB {
+			return formatMemoryGBText(float64(value) / 1024)
+		}
+		return formatMemoryGBText(float64(value))
+	case int32:
+		if fromMB {
+			return formatMemoryGBText(float64(value) / 1024)
+		}
+		return formatMemoryGBText(float64(value))
+	case int64:
+		if fromMB {
+			return formatMemoryGBText(float64(value) / 1024)
+		}
+		return formatMemoryGBText(float64(value))
+	case float32:
+		if fromMB {
+			return formatMemoryGBText(float64(value) / 1024)
+		}
+		return formatMemoryGBText(float64(value))
+	case float64:
+		if fromMB {
+			return formatMemoryGBText(value / 1024)
+		}
+		return formatMemoryGBText(value)
+	case json.Number:
+		if parsed, err := value.Float64(); err == nil {
+			if fromMB {
+				return formatMemoryGBText(parsed / 1024)
+			}
+			return formatMemoryGBText(parsed)
+		}
+	default:
+		text := strings.TrimSpace(fmt.Sprintf("%v", raw))
+		if text == "" || text == "<nil>" {
+			return ""
+		}
+		return normalizeMemoryToGB(text, fromMB)
+	}
+	return ""
+}
+
+func formatMemoryGBText(value float64) string {
+	if value <= 0 {
+		return ""
+	}
+	text := strconv.FormatFloat(value, 'f', 2, 64)
+	text = strings.TrimRight(strings.TrimRight(text, "0"), ".")
+	return text + "G"
+}
+
+func containsAlphabet(value string) bool {
+	for _, ch := range value {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') {
+			return true
+		}
+	}
+	return false
 }
 
 func mapCloudAssetToCIType(assetType string) string {
