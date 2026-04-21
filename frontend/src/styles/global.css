@@ -154,6 +154,23 @@ h4 {
   min-width: 0;
 }
 
+.rbac-compact-card {
+  grid-template-rows: auto auto 1fr auto;
+  gap: 8px;
+}
+
+.rbac-compact-card .rbac-module-header {
+  margin-bottom: 2px;
+}
+
+.rbac-compact-card .cloud-filter-bar {
+  margin: 0;
+}
+
+.rbac-compact-card .rbac-table-wrapper {
+  margin-top: 0;
+}
+
 .cloud-module-card {
   grid-template-rows: auto auto auto;
   min-height: 0;

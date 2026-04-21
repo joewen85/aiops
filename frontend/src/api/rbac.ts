@@ -2,8 +2,24 @@ import { apiClient } from "@/api/client";
 import type { ApiResponse, PageData } from "@/api/types";
 import type { PermissionItem, RoleItem, RolePermissionDetail } from "@/types/rbac";
 
-export async function listRoles(page = 1, pageSize = 10): Promise<PageData<RoleItem>> {
-  const { data } = await apiClient.get<ApiResponse<PageData<RoleItem>>>(`/roles?page=${page}&pageSize=${pageSize}`);
+interface RoleListQuery {
+  keyword?: string;
+  builtIn?: string;
+}
+
+interface PermissionListQuery {
+  keyword?: string;
+  type?: string;
+}
+
+export async function listRoles(page = 1, pageSize = 10, query: RoleListQuery = {}): Promise<PageData<RoleItem>> {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  if (query.keyword?.trim()) params.set("keyword", query.keyword.trim());
+  if (query.builtIn?.trim()) params.set("builtIn", query.builtIn.trim());
+  const { data } = await apiClient.get<ApiResponse<PageData<RoleItem>>>(`/roles?${params.toString()}`);
   return data.data;
 }
 
@@ -26,8 +42,14 @@ export async function deleteRole(roleId: number): Promise<void> {
   await apiClient.delete(`/roles/${roleId}`);
 }
 
-export async function listPermissions(page = 1, pageSize = 10): Promise<PageData<PermissionItem>> {
-  const { data } = await apiClient.get<ApiResponse<PageData<PermissionItem>>>(`/permissions?page=${page}&pageSize=${pageSize}`);
+export async function listPermissions(page = 1, pageSize = 10, query: PermissionListQuery = {}): Promise<PageData<PermissionItem>> {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  if (query.keyword?.trim()) params.set("keyword", query.keyword.trim());
+  if (query.type?.trim()) params.set("type", query.type.trim());
+  const { data } = await apiClient.get<ApiResponse<PageData<PermissionItem>>>(`/permissions?${params.toString()}`);
   return data.data;
 }
 

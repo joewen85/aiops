@@ -476,8 +476,42 @@ func (h *Handler) GetDepartment(c *gin.Context) {
 	getByID[models.Department](c, h.DB)
 }
 
-func (h *Handler) ListRoles(c *gin.Context) { listByModel[models.Role](c, h.DB) }
-func (h *Handler) GetRole(c *gin.Context)   { getByID[models.Role](c, h.DB) }
+func (h *Handler) ListRoles(c *gin.Context) {
+	page := pagination.Parse(c)
+	query := h.DB.Model(&models.Role{})
+
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where("name LIKE ? OR description LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	if builtInText := strings.TrimSpace(c.Query("builtIn")); builtInText != "" {
+		switch strings.ToLower(builtInText) {
+		case "true":
+			query = query.Where("built_in = ?", true)
+		case "false":
+			query = query.Where("built_in = ?", false)
+		default:
+			response.Error(c, http.StatusBadRequest, appErr.New(3001, "builtIn must be true or false"))
+			return
+		}
+	}
+
+	var (
+		items []models.Role
+		total int64
+	)
+	if err := query.Count(&total).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	if err := query.Order("id desc").Limit(page.PageSize).Offset(pagination.Offset(page)).Find(&items).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.List(c, items, total, page.Page, page.PageSize)
+}
+
+func (h *Handler) GetRole(c *gin.Context) { getByID[models.Role](c, h.DB) }
 
 func (h *Handler) CreateRole(c *gin.Context) {
 	var req struct {
@@ -704,15 +738,25 @@ func (h *Handler) GetRolePermissions(c *gin.Context) {
 }
 
 func (h *Handler) ListPermissions(c *gin.Context) {
-	typeFilter := strings.TrimSpace(c.Query("type"))
-	if typeFilter == "" {
-		listByModel[models.Permission](c, h.DB)
-		return
-	}
 	page := pagination.Parse(c)
+	query := h.DB.Model(&models.Permission{})
+
+	if typeFilter := strings.TrimSpace(c.Query("type")); typeFilter != "" {
+		query = query.Where("type = ?", typeFilter)
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where(
+			"name LIKE ? OR key LIKE ? OR resource LIKE ? OR action LIKE ? OR description LIKE ?",
+			"%"+keyword+"%",
+			"%"+keyword+"%",
+			"%"+keyword+"%",
+			"%"+keyword+"%",
+			"%"+keyword+"%",
+		)
+	}
+
 	var items []models.Permission
 	var total int64
-	query := h.DB.Model(&models.Permission{}).Where("type = ?", typeFilter)
 	if err := query.Count(&total).Error; err != nil {
 		response.Internal(c, err)
 		return

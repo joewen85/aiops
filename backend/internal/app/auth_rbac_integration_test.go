@@ -706,6 +706,72 @@ func TestListPermissionsTypeFilterIntegration(t *testing.T) {
 	}
 }
 
+func TestListRolesKeywordAndBuiltInFilterIntegration(t *testing.T) {
+	router, _, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	_ = createRoleViaAPI(t, router, adminToken, "ops-auditor")
+	_ = createRoleViaAPI(t, router, adminToken, "ops-developer")
+
+	rec := sendJSONRequest(t, router, http.MethodGet, "/api/v1/roles?keyword=auditor&builtIn=false&page=1&pageSize=20", adminToken, nil)
+	resp := assertOKResponse(t, rec)
+
+	var pageData listPayload[models.Role]
+	if err := json.Unmarshal(resp.Data, &pageData); err != nil {
+		t.Fatalf("unmarshal role list payload failed: %v", err)
+	}
+	if len(pageData.List) == 0 {
+		t.Fatalf("expected filtered roles not empty")
+	}
+	for _, item := range pageData.List {
+		if item.BuiltIn {
+			t.Fatalf("expected only non built-in roles, got %+v", item)
+		}
+		name := strings.ToLower(item.Name)
+		description := strings.ToLower(item.Description)
+		if !strings.Contains(name, "auditor") && !strings.Contains(description, "auditor") {
+			t.Fatalf("expected keyword matched role, got %+v", item)
+		}
+	}
+}
+
+func TestListPermissionsKeywordFilterIntegration(t *testing.T) {
+	router, _, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	_ = createPermissionViaAPI(t, router, adminToken, map[string]any{
+		"name":        "ops audit read",
+		"type":        "api",
+		"key":         "api.audit.read",
+		"resource":    "/api/v1/audit/logs",
+		"action":      "GET",
+		"description": "audit logs read access",
+	})
+
+	rec := sendJSONRequest(t, router, http.MethodGet, "/api/v1/permissions?keyword=audit&page=1&pageSize=20", adminToken, nil)
+	resp := assertOKResponse(t, rec)
+
+	var pageData listPayload[models.Permission]
+	if err := json.Unmarshal(resp.Data, &pageData); err != nil {
+		t.Fatalf("unmarshal permission list payload failed: %v", err)
+	}
+	if len(pageData.List) == 0 {
+		t.Fatalf("expected keyword filtered permission list not empty")
+	}
+	for _, item := range pageData.List {
+		haystack := strings.ToLower(strings.Join([]string{
+			item.Name,
+			item.Key,
+			item.Resource,
+			item.Action,
+			item.Description,
+		}, " "))
+		if !strings.Contains(haystack, "audit") {
+			t.Fatalf("expected audit keyword matched permission, got %+v", item)
+		}
+	}
+}
+
 func newRouterForIntegrationTest(t *testing.T) (*gin.Engine, *gorm.DB, *casbin.Enforcer) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

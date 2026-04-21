@@ -96,6 +96,16 @@ interface PermissionFormState {
   description: string;
 }
 
+interface RoleSearchState {
+  keyword: string;
+  builtIn: string;
+}
+
+interface PermissionSearchState {
+  keyword: string;
+  type: string;
+}
+
 function defaultPermissionForm(): PermissionFormState {
   return {
     name: "",
@@ -107,6 +117,20 @@ function defaultPermissionForm(): PermissionFormState {
     resourceTagScope: "*",
     envScope: "*",
     description: "",
+  };
+}
+
+function defaultRoleSearchState(): RoleSearchState {
+  return {
+    keyword: "",
+    builtIn: "",
+  };
+}
+
+function defaultPermissionSearchState(): PermissionSearchState {
+  return {
+    keyword: "",
+    type: "",
   };
 }
 
@@ -140,6 +164,11 @@ function normalizeKeyword(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function containsKeyword(value: string, keyword: string): boolean {
+  if (!keyword) return true;
+  return value.toLowerCase().includes(keyword);
+}
+
 function formatModuleLabel(moduleKey: string): string {
   const cleaned = moduleKey.trim();
   if (!cleaned) return "未归类";
@@ -157,6 +186,10 @@ export function RBACPage() {
   const [permissionPage, setPermissionPage] = useState(1);
   const [rolePageSize, setRolePageSize] = useState(defaultPageSize);
   const [permissionPageSize, setPermissionPageSize] = useState(defaultPageSize);
+  const [roleFilters, setRoleFilters] = useState<RoleSearchState>(defaultRoleSearchState);
+  const [roleQuery, setRoleQuery] = useState<RoleSearchState>(defaultRoleSearchState);
+  const [permissionFilters, setPermissionFilters] = useState<PermissionSearchState>(defaultPermissionSearchState);
+  const [permissionQuery, setPermissionQuery] = useState<PermissionSearchState>(defaultPermissionSearchState);
   const [roleJumpPageInput, setRoleJumpPageInput] = useState("1");
   const [permissionJumpPageInput, setPermissionJumpPageInput] = useState("1");
   const [bindingPermissions, setBindingPermissions] = useState<PermissionItem[]>([]);
@@ -205,12 +238,12 @@ export function RBACPage() {
   });
 
   useEffect(() => {
-    void loadRolePage(rolePage, rolePageSize);
-  }, [rolePage, rolePageSize]);
+    void loadRolePage(rolePage, rolePageSize, roleQuery);
+  }, [rolePage, rolePageSize, roleQuery]);
 
   useEffect(() => {
-    void loadPermissionPage(permissionPage, permissionPageSize);
-  }, [permissionPage, permissionPageSize]);
+    void loadPermissionPage(permissionPage, permissionPageSize, permissionQuery);
+  }, [permissionPage, permissionPageSize, permissionQuery]);
 
   useEffect(() => {
     setRoleJumpPageInput(String(rolePage));
@@ -295,10 +328,10 @@ export function RBACPage() {
       .sort((left, right) => left.moduleKey.localeCompare(right.moduleKey, "zh-CN"));
   }, [filteredBindingPermissions]);
 
-  async function loadRolePage(page: number, pageSize: number) {
+  async function loadRolePage(page: number, pageSize: number, query: RoleSearchState = roleQuery) {
     setRoleListLoading(true);
     try {
-      const data = await listRoles(page, pageSize);
+      const data = await listRoles(page, pageSize, query);
       const pages = totalPages(data.total, pageSize);
       if (page > pages) {
         setRolePage(pages);
@@ -313,10 +346,10 @@ export function RBACPage() {
     }
   }
 
-  async function loadPermissionPage(page: number, pageSize: number) {
+  async function loadPermissionPage(page: number, pageSize: number, query: PermissionSearchState = permissionQuery) {
     setPermissionListLoading(true);
     try {
-      const data = await listPermissions(page, pageSize);
+      const data = await listPermissions(page, pageSize, query);
       const pages = totalPages(data.total, pageSize);
       if (page > pages) {
         setPermissionPage(pages);
@@ -433,6 +466,32 @@ export function RBACPage() {
 
   function openPermissionTableSettings() {
     setTableSettingsTarget("permissions");
+  }
+
+  function handleRoleFilterSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRolePage(1);
+    setRoleQuery({ ...roleFilters });
+  }
+
+  function handlePermissionFilterSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPermissionPage(1);
+    setPermissionQuery({ ...permissionFilters });
+  }
+
+  function handleRoleFilterReset() {
+    const defaults = defaultRoleSearchState();
+    setRoleFilters(defaults);
+    setRoleQuery(defaults);
+    setRolePage(1);
+  }
+
+  function handlePermissionFilterReset() {
+    const defaults = defaultPermissionSearchState();
+    setPermissionFilters(defaults);
+    setPermissionQuery(defaults);
+    setPermissionPage(1);
   }
 
   function toggleRoleVisibleColumn(columnKey: string) {
@@ -770,11 +829,32 @@ export function RBACPage() {
   const currentRoleBuiltIn = drawer.type === "role-edit" ? drawer.builtIn : false;
   const filteredRoles = useMemo(() => roles.filter((role) => {
     const builtInValue = role.builtIn ? "true" : "false";
-    return selectedRoleBuiltInValues.includes(builtInValue);
-  }), [roles, selectedRoleBuiltInValues]);
+    if (!selectedRoleBuiltInValues.includes(builtInValue)) return false;
+    if (roleQuery.builtIn && builtInValue !== roleQuery.builtIn) return false;
+    const keyword = normalizeKeyword(roleQuery.keyword);
+    if (!keyword) return true;
+    const roleName = role.name ?? "";
+    const roleDescription = role.description ?? "";
+    return containsKeyword(roleName, keyword) || containsKeyword(roleDescription, keyword);
+  }), [roles, selectedRoleBuiltInValues, roleQuery.builtIn, roleQuery.keyword]);
   const filteredPermissions = useMemo(() => permissions.filter((permission) => {
-    return selectedPermissionTypeValues.includes(permission.type);
-  }), [permissions, selectedPermissionTypeValues]);
+    if (!selectedPermissionTypeValues.includes(permission.type)) return false;
+    if (permissionQuery.type && permission.type !== permissionQuery.type) return false;
+    const keyword = normalizeKeyword(permissionQuery.keyword);
+    if (!keyword) return true;
+    const haystack = [
+      permission.name,
+      permission.key,
+      permission.resource,
+      permission.action,
+      permission.description,
+      permission.type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(keyword);
+  }), [permissions, selectedPermissionTypeValues, permissionQuery.keyword, permissionQuery.type]);
   const roleRows = roleListLoading ? [] : filteredRoles;
   const permissionRows = permissionListLoading ? [] : filteredPermissions;
   const roleVisibleColumnSet = new Set(visibleRoleColumnKeys);
@@ -791,7 +871,7 @@ export function RBACPage() {
 
       <div className="rbac-module-scroll">
         <div className="rbac-module-grid">
-          <article className="card rbac-module-card">
+          <article className="card rbac-module-card rbac-compact-card">
           <div className="rbac-module-header">
             <div>
               <h3>角色子模块</h3>
@@ -806,6 +886,28 @@ export function RBACPage() {
               创建角色
             </PermissionButton>
           </div>
+
+          <form className="cloud-filter-bar" onSubmit={handleRoleFilterSubmit}>
+            <input
+              className="cloud-filter-control cloud-filter-keyword"
+              value={roleFilters.keyword}
+              onChange={(event) => setRoleFilters((prev) => ({ ...prev, keyword: event.target.value }))}
+              placeholder="关键词：角色名/描述"
+            />
+            <select
+              className="cloud-filter-control"
+              value={roleFilters.builtIn}
+              onChange={(event) => setRoleFilters((prev) => ({ ...prev, builtIn: event.target.value }))}
+            >
+              <option value="">内置状态：全部</option>
+              <option value="true">内置角色</option>
+              <option value="false">自定义角色</option>
+            </select>
+            <div className="cloud-filter-actions">
+              <button className="btn cursor-pointer" type="submit" disabled={roleListLoading}>查询</button>
+              <button className="btn cursor-pointer" type="button" onClick={handleRoleFilterReset}>重置</button>
+            </div>
+          </form>
 
           <div className="rbac-table-wrapper">
             <table className="rbac-table">
@@ -894,7 +996,7 @@ export function RBACPage() {
           })}
         </article>
 
-        <article className="card rbac-module-card">
+        <article className="card rbac-module-card rbac-compact-card">
           <div className="rbac-module-header">
             <div>
               <h3>权限子模块</h3>
@@ -909,6 +1011,29 @@ export function RBACPage() {
               创建权限
             </PermissionButton>
           </div>
+
+          <form className="cloud-filter-bar" onSubmit={handlePermissionFilterSubmit}>
+            <input
+              className="cloud-filter-control cloud-filter-keyword"
+              value={permissionFilters.keyword}
+              onChange={(event) => setPermissionFilters((prev) => ({ ...prev, keyword: event.target.value }))}
+              placeholder="关键词：权限名/Key/资源/动作"
+            />
+            <select
+              className="cloud-filter-control"
+              value={permissionFilters.type}
+              onChange={(event) => setPermissionFilters((prev) => ({ ...prev, type: event.target.value }))}
+            >
+              <option value="">权限类型：全部</option>
+              <option value="api">api</option>
+              <option value="menu">menu</option>
+              <option value="button">button</option>
+            </select>
+            <div className="cloud-filter-actions">
+              <button className="btn cursor-pointer" type="submit" disabled={permissionListLoading}>查询</button>
+              <button className="btn cursor-pointer" type="button" onClick={handlePermissionFilterReset}>重置</button>
+            </div>
+          </form>
 
           <div className="rbac-table-wrapper">
             <table className="rbac-table">
