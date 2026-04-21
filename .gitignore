@@ -12,5 +12,6 @@ backend/tmp
 frontend/.vite
 frontend/.cache
 frontend/coverage
+.zed/
 temp.md
 PLAN.md
