@@ -233,6 +233,106 @@ h4 {
   padding: 0 6px;
 }
 
+.row-action-overflow-trigger {
+  min-width: 36px;
+  padding: 0 10px;
+}
+
+.row-action-overflow-overlay {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  z-index: 1300;
+}
+
+.row-action-overflow-modal {
+  position: fixed;
+  width: min(320px, calc(100vw - 16px));
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  z-index: 1301;
+}
+
+.row-action-overflow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.row-action-overflow-header h4 {
+  margin: 0;
+}
+
+.row-action-overflow-body {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.row-action-overflow-item {
+  width: 100%;
+}
+
+.delete-confirm-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.35);
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+}
+
+.delete-confirm-modal {
+  width: min(420px, calc(100vw - 24px));
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.delete-confirm-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.delete-confirm-header h4 {
+  margin: 0;
+}
+
+.delete-confirm-body {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.delete-confirm-hint {
+  margin: 0;
+  font-size: 13px;
+}
+
+.delete-confirm-input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .table-settings-mask {
   position: fixed;
   inset: 0;

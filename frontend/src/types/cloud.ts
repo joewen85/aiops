@@ -60,9 +60,14 @@ export interface CloudSyncJob {
 export interface CloudSyncResult {
   id: number;
   job?: CloudSyncJob;
+  providerAssetCount?: number;
+  cloudAssetCount?: number;
+  cmdbAssetCount?: number;
   assets?: Array<Record<string, unknown>>;
   cloudAssets?: CloudAssetItem[];
+  cloudAssetItems?: CloudAssetItem[];
   cmdbResources?: Array<Record<string, unknown>>;
   cmdbAssets?: Array<Record<string, unknown>>;
+  cmdbAssetItems?: Array<Record<string, unknown>>;
   syncSummary?: Record<string, unknown>;
 }

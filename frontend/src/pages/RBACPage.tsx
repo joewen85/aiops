@@ -14,6 +14,7 @@ import {
   updatePermission,
   updateRole,
 } from "@/api/rbac";
+import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { FieldFilterPopover } from "@/components/FieldFilterPopover";
 import { PermissionButton } from "@/components/PermissionButton";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
@@ -171,6 +172,9 @@ export function RBACPage() {
   const [permissionListLoading, setPermissionListLoading] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteRoleTarget, setDeleteRoleTarget] = useState<RoleItem | null>(null);
+  const [deletePermissionTarget, setDeletePermissionTarget] = useState<PermissionItem | null>(null);
   const [bindingSaving, setBindingSaving] = useState(false);
   const [tableSettingsTarget, setTableSettingsTarget] = useState<TableSettingsTarget>("closed");
   const [visibleRoleColumnKeys, setVisibleRoleColumnKeys] = useState<string[]>(() => {
@@ -547,9 +551,6 @@ export function RBACPage() {
       showToast("内置角色不允许删除");
       return;
     }
-    if (!window.confirm(`确认删除角色【${role.name}】吗？`)) {
-      return;
-    }
     try {
       await deleteRole(role.id);
       showToast("角色已删除");
@@ -567,9 +568,6 @@ export function RBACPage() {
   }
 
   async function handleDeletePermission(permission: PermissionItem) {
-    if (!window.confirm(`确认删除权限【${permission.name}】吗？`)) {
-      return;
-    }
     try {
       await deletePermission(permission.id);
       showToast("权限已删除");
@@ -584,6 +582,34 @@ export function RBACPage() {
     } catch {
       showToast("权限删除失败");
     }
+  }
+
+  function requestDeleteRole(role: RoleItem) {
+    if (role.builtIn) {
+      showToast("内置角色不允许删除");
+      return;
+    }
+    setDeleteRoleTarget(role);
+  }
+
+  function requestDeletePermission(permission: PermissionItem) {
+    setDeletePermissionTarget(permission);
+  }
+
+  async function confirmDeleteRole() {
+    if (!deleteRoleTarget) return;
+    setDeleteSubmitting(true);
+    await handleDeleteRole(deleteRoleTarget);
+    setDeleteRoleTarget(null);
+    setDeleteSubmitting(false);
+  }
+
+  async function confirmDeletePermission() {
+    if (!deletePermissionTarget) return;
+    setDeleteSubmitting(true);
+    await handleDeletePermission(deletePermissionTarget);
+    setDeletePermissionTarget(null);
+    setDeleteSubmitting(false);
   }
 
   function formatDateTime(value?: string): string {
@@ -840,7 +866,7 @@ export function RBACPage() {
                           permissionKey="button.rbac.role.delete"
                           className="btn ghost cursor-pointer"
                           type="button"
-                          onClick={() => void handleDeleteRole(role)}
+                          onClick={() => requestDeleteRole(role)}
                           disabled={role.builtIn}
                         >
                           删除
@@ -936,7 +962,7 @@ export function RBACPage() {
                         <PermissionButton permissionKey="button.rbac.permission.update" className="btn ghost cursor-pointer" type="button" onClick={() => openPermissionEditDrawer(permission)}>
                           修改
                         </PermissionButton>
-                        <PermissionButton permissionKey="button.rbac.permission.delete" className="btn ghost cursor-pointer" type="button" onClick={() => void handleDeletePermission(permission)}>
+                        <PermissionButton permissionKey="button.rbac.permission.delete" className="btn ghost cursor-pointer" type="button" onClick={() => requestDeletePermission(permission)}>
                           删除
                         </PermissionButton>
                       </td>
@@ -986,6 +1012,24 @@ export function RBACPage() {
           setVisiblePermissionColumnKeys(sanitizeVisibleColumnKeys(defaultPermissionVisibleColumnKeys, permissionTableColumns));
         }}
         onClose={() => setTableSettingsTarget("closed")}
+      />
+
+      <DeleteConfirmModal
+        open={deleteRoleTarget !== null}
+        title="删除角色确认"
+        description={`将删除角色：${deleteRoleTarget?.name || "-"}`}
+        confirming={deleteSubmitting}
+        onCancel={() => setDeleteRoleTarget(null)}
+        onConfirm={() => void confirmDeleteRole()}
+      />
+
+      <DeleteConfirmModal
+        open={deletePermissionTarget !== null}
+        title="删除权限确认"
+        description={`将删除权限：${deletePermissionTarget?.name || "-"}`}
+        confirming={deleteSubmitting}
+        onCancel={() => setDeletePermissionTarget(null)}
+        onConfirm={() => void confirmDeletePermission()}
       />
 
       {drawerVisible && (

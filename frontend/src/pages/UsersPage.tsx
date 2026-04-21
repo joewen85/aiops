@@ -21,6 +21,7 @@ import {
   updateDepartment,
   updateUser,
 } from "@/api/users";
+import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { FieldFilterPopover } from "@/components/FieldFilterPopover";
 import { PermissionButton } from "@/components/PermissionButton";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
@@ -141,6 +142,9 @@ export function UsersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [bindingSaving, setBindingSaving] = useState(false);
   const [statusChangingUserId, setStatusChangingUserId] = useState<number | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteUserTarget, setDeleteUserTarget] = useState<UserItem | null>(null);
+  const [deleteDepartmentTarget, setDeleteDepartmentTarget] = useState<DepartmentListItem | null>(null);
   const [tableSettingsTarget, setTableSettingsTarget] = useState<TableSettingsTarget>("closed");
   const [visibleUserColumnKeys, setVisibleUserColumnKeys] = useState<string[]>(() => {
     const persisted = loadPersistedListSettings(USER_LIST_SETTINGS_KEY);
@@ -610,7 +614,6 @@ export function UsersPage() {
   }
 
   async function handleDeleteUser(user: UserItem) {
-    if (!window.confirm(`确认删除用户【${user.username}】吗？`)) return;
     try {
       await deleteUser(user.id);
       showToast("用户已删除");
@@ -631,7 +634,6 @@ export function UsersPage() {
   }
 
   async function handleDeleteDepartment(department: DepartmentListItem) {
-    if (!window.confirm(`确认删除部门【${department.name}】吗？`)) return;
     try {
       await deleteDepartment(department.id);
       showToast("部门已删除");
@@ -647,6 +649,30 @@ export function UsersPage() {
     } catch {
       showToast("部门删除失败");
     }
+  }
+
+  function requestDeleteUser(user: UserItem) {
+    setDeleteUserTarget(user);
+  }
+
+  function requestDeleteDepartment(department: DepartmentListItem) {
+    setDeleteDepartmentTarget(department);
+  }
+
+  async function confirmDeleteUser() {
+    if (!deleteUserTarget) return;
+    setDeleteSubmitting(true);
+    await handleDeleteUser(deleteUserTarget);
+    setDeleteUserTarget(null);
+    setDeleteSubmitting(false);
+  }
+
+  async function confirmDeleteDepartment() {
+    if (!deleteDepartmentTarget) return;
+    setDeleteSubmitting(true);
+    await handleDeleteDepartment(deleteDepartmentTarget);
+    setDeleteDepartmentTarget(null);
+    setDeleteSubmitting(false);
   }
 
   async function handleToggleUserActive(user: UserItem) {
@@ -904,7 +930,7 @@ export function UsersPage() {
                             permissionKey="button.users.user.delete"
                             className="btn ghost cursor-pointer"
                             type="button"
-                            onClick={() => void handleDeleteUser(user)}
+                            onClick={() => requestDeleteUser(user)}
                           >
                             删除
                           </PermissionButton>
@@ -997,7 +1023,7 @@ export function UsersPage() {
                             permissionKey="button.users.department.delete"
                             className="btn ghost cursor-pointer"
                             type="button"
-                            onClick={() => void handleDeleteDepartment(department)}
+                            onClick={() => requestDeleteDepartment(department)}
                           >
                             删除
                           </PermissionButton>
@@ -1048,6 +1074,24 @@ export function UsersPage() {
           setVisibleDepartmentColumnKeys(sanitizeVisibleColumnKeys(defaultDepartmentVisibleColumnKeys, departmentTableColumns));
         }}
         onClose={() => setTableSettingsTarget("closed")}
+      />
+
+      <DeleteConfirmModal
+        open={deleteUserTarget !== null}
+        title="删除用户确认"
+        description={`将删除用户：${deleteUserTarget?.username || "-"}`}
+        confirming={deleteSubmitting}
+        onCancel={() => setDeleteUserTarget(null)}
+        onConfirm={() => void confirmDeleteUser()}
+      />
+
+      <DeleteConfirmModal
+        open={deleteDepartmentTarget !== null}
+        title="删除部门确认"
+        description={`将删除部门：${deleteDepartmentTarget?.name || "-"}`}
+        confirming={deleteSubmitting}
+        onCancel={() => setDeleteDepartmentTarget(null)}
+        onConfirm={() => void confirmDeleteDepartment()}
       />
 
       {drawerVisible && (

@@ -67,8 +67,9 @@ export async function verifyCloudAccount(accountId: number): Promise<{ id: numbe
   return data.data;
 }
 
-export async function syncCloudAccount(accountId: number): Promise<CloudSyncResult> {
-  const { data } = await apiClient.post<ApiResponse<CloudSyncResult>>(`/cloud/accounts/${accountId}/sync`);
+export async function syncCloudAccount(accountId: number, options: { verbose?: boolean } = {}): Promise<CloudSyncResult> {
+  const query = options.verbose ? "?verbose=1" : "";
+  const { data } = await apiClient.post<ApiResponse<CloudSyncResult>>(`/cloud/accounts/${accountId}/sync${query}`);
   return data.data;
 }
 

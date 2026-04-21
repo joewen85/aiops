@@ -66,6 +66,34 @@ export async function deleteCMDBResource(resourceId: number): Promise<void> {
   await apiClient.delete(`/cmdb/resources/${resourceId}`);
 }
 
+export async function getCMDBResource(resourceId: number): Promise<CmdbResourceItem> {
+  const { data } = await apiClient.get<ApiResponse<CmdbResourceItem>>(`/cmdb/resources/${resourceId}`);
+  return data.data;
+}
+
+export async function executeCMDBResourceAction(resourceId: number, action: "restart" | "stop"): Promise<{
+  id: number;
+  ciId: string;
+  action: string;
+  status: string;
+  provider: string;
+  accountId: number;
+  instanceId: string;
+  region: string;
+}> {
+  const { data } = await apiClient.post<ApiResponse<{
+    id: number;
+    ciId: string;
+    action: string;
+    status: string;
+    provider: string;
+    accountId: number;
+    instanceId: string;
+    region: string;
+  }>>(`/cmdb/resources/${resourceId}/actions/${action}`);
+  return data.data;
+}
+
 export async function listCMDBRelations(params: ListRelationParams = {}): Promise<PageData<CmdbRelationItem>> {
   const query = buildQuery({
     page: params.page ?? 1,
@@ -130,4 +158,3 @@ export async function getCMDBChangeImpact(releaseId: string): Promise<Record<str
   const { data } = await apiClient.get<ApiResponse<Record<string, unknown>>>(`/cmdb/change-impact/${encodeURIComponent(releaseId)}`);
   return data.data;
 }
-

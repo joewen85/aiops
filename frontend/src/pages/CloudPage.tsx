@@ -14,9 +14,11 @@ import {
   updateCloudAsset,
   verifyCloudAccount,
 } from "@/api/cloud";
+import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import { PermissionButton } from "@/components/PermissionButton";
+import { RowActionOverflow } from "@/components/RowActionOverflow";
 import type { CloudAccountItem, CloudAssetItem, CloudAssetType, CloudProvider } from "@/types/cloud";
 import {
   loadPersistedListSettings,
@@ -228,6 +230,7 @@ export function CloudPage() {
   const [accountVerifyID, setAccountVerifyID] = useState<number | null>(null);
   const [accountSyncID, setAccountSyncID] = useState<number | null>(null);
   const [accountDeleteID, setAccountDeleteID] = useState<number | null>(null);
+  const [deleteAccountTarget, setDeleteAccountTarget] = useState<CloudAccountItem | null>(null);
   const [accountEditID, setAccountEditID] = useState<number | null>(null);
   const [accountForm, setAccountForm] = useState<CloudAccountFormState>(defaultCloudAccountForm);
   const [accountFilter, setAccountFilter] = useState<CloudAccountFilterState>(defaultCloudAccountFilter);
@@ -240,6 +243,7 @@ export function CloudPage() {
   const [assetLoading, setAssetLoading] = useState(false);
   const [assetSubmitting, setAssetSubmitting] = useState(false);
   const [assetDeleteID, setAssetDeleteID] = useState<number | null>(null);
+  const [deleteAssetTarget, setDeleteAssetTarget] = useState<CloudAssetItem | null>(null);
   const [assetEditID, setAssetEditID] = useState<number | null>(null);
   const [assetFilter, setAssetFilter] = useState<CloudAssetFilterState>(defaultCloudAssetFilter);
   const [assetQuery, setAssetQuery] = useState<CloudAssetFilterState>(defaultCloudAssetFilter);
@@ -357,8 +361,8 @@ export function CloudPage() {
     setAccountForm({
       provider: item.provider,
       name: item.name,
-      accessKey: item.accessKey,
-      secretKey: item.secretKey,
+      accessKey: "",
+      secretKey: "",
       region: item.region ?? "",
     });
     setDrawer({ type: "account-edit" });
@@ -435,19 +439,33 @@ export function CloudPage() {
 
   async function handleSubmitAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!accountForm.name.trim() || !accountForm.accessKey.trim() || !accountForm.secretKey.trim()) {
+    if (!accountForm.name.trim()) {
+      showToast("请填写账号名称");
+      return;
+    }
+    const accessKey = accountForm.accessKey.trim();
+    const secretKey = accountForm.secretKey.trim();
+    if (!accountEditID && (!accessKey || !secretKey)) {
       showToast("请填写完整云账号信息");
+      return;
+    }
+    if (accessKey.includes("*") || secretKey.includes("*")) {
+      showToast("请填写原始密钥，不可使用脱敏值");
+      return;
+    }
+    if (accountForm.provider === "tencent" && accessKey && !isLikelyTencentSecretId(accessKey)) {
+      showToast("腾讯云 accessKey 应填写 SecretId（通常以 AKID 开头）");
       return;
     }
     setAccountSubmitting(true);
     try {
-      const payload = {
+      const payload: Record<string, string> = {
         provider: accountForm.provider,
         name: accountForm.name.trim(),
-        accessKey: accountForm.accessKey.trim(),
-        secretKey: accountForm.secretKey.trim(),
         region: accountForm.region.trim(),
       };
+      if (accessKey) payload.accessKey = accessKey;
+      if (secretKey) payload.secretKey = secretKey;
       if (accountEditID) {
         await updateCloudAccount(accountEditID, payload);
       } else {
@@ -456,8 +474,8 @@ export function CloudPage() {
       closeDrawer();
       await loadAccountPage(accountPage, accountPageSize, accountQuery);
       showToast("云账号保存成功");
-    } catch {
-      showToast("云账号保存失败");
+    } catch (error) {
+      showToast(extractErrorMessage(error, "云账号保存失败"));
     } finally {
       setAccountSubmitting(false);
     }
@@ -469,8 +487,8 @@ export function CloudPage() {
       await verifyCloudAccount(accountID);
       await loadAccountPage(accountPage, accountPageSize, accountQuery);
       showToast("云账号校验成功");
-    } catch {
-      showToast("云账号校验失败");
+    } catch (error) {
+      showToast(extractErrorMessage(error, "云账号校验失败"));
     } finally {
       setAccountVerifyID(null);
     }
@@ -483,11 +501,13 @@ export function CloudPage() {
       if (result.job?.status === "failed") {
         showToast("同步任务执行失败");
       } else {
-        showToast("同步任务执行成功");
+        const cloudCount = result.cloudAssetCount ?? 0;
+        const cmdbCount = result.cmdbAssetCount ?? 0;
+        showToast(`同步任务执行成功（云资源 ${cloudCount}，CMDB ${cmdbCount}）`);
       }
       await loadAssetPage(assetPage, assetPageSize, assetQuery, selectedAccountID);
-    } catch {
-      showToast("同步任务执行失败");
+    } catch (error) {
+      showToast(extractErrorMessage(error, "同步任务执行失败"));
     } finally {
       setAccountSyncID(null);
     }
@@ -508,6 +528,16 @@ export function CloudPage() {
     } finally {
       setAccountDeleteID(null);
     }
+  }
+
+  function requestDeleteAccount(account: CloudAccountItem) {
+    setDeleteAccountTarget(account);
+  }
+
+  async function confirmDeleteAccount() {
+    if (!deleteAccountTarget) return;
+    await handleDeleteAccount(deleteAccountTarget.id);
+    setDeleteAccountTarget(null);
   }
 
   async function handleSubmitAsset(event: FormEvent<HTMLFormElement>) {
@@ -565,6 +595,20 @@ export function CloudPage() {
     }
   }
 
+  function requestDeleteAsset(asset: CloudAssetItem) {
+    if (isRunningStatus(asset.status)) {
+      showToast("运行中资源不可删除");
+      return;
+    }
+    setDeleteAssetTarget(asset);
+  }
+
+  async function confirmDeleteAsset() {
+    if (!deleteAssetTarget) return;
+    await handleDeleteAsset(deleteAssetTarget.id);
+    setDeleteAssetTarget(null);
+  }
+
   function handleAssetFilterSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAssetPage(1);
@@ -595,6 +639,7 @@ export function CloudPage() {
   const drawerVisible = drawer.type !== "closed";
   const showAccountForm = drawer.type === "account-create" || drawer.type === "account-edit";
   const showAssetForm = drawer.type === "asset-create" || drawer.type === "asset-edit";
+  const isTencentAccountProvider = accountForm.provider === "tencent";
 
   function drawerTitle(): string {
     if (drawer.type === "account-create") return "创建云账号";
@@ -707,51 +752,46 @@ export function CloudPage() {
                         {accountVisibleColumnSet.has("actions") && (
                           <td>
                             <div className="rbac-row-actions">
-                              <PermissionButton
-                                permissionKey="button.cloud.account.verify"
-                                className="btn cursor-pointer"
-                                type="button"
-                                disabled={accountVerifyID === item.id}
-                                onClick={() => void handleVerifyAccount(item.id)}
-                              >
-                                {accountVerifyID === item.id ? "校验中..." : "校验"}
-                              </PermissionButton>
-                              <PermissionButton
-                                permissionKey="button.cloud.account.sync"
-                                className="btn cursor-pointer"
-                                type="button"
-                                disabled={accountSyncID === item.id}
-                                onClick={() => void handleSyncAccount(item.id)}
-                              >
-                                {accountSyncID === item.id ? "同步中..." : "同步"}
-                              </PermissionButton>
-                              <button
-                                className="btn cursor-pointer"
-                                type="button"
-                                onClick={() => {
-                                  setSelectedAccountID(item.id);
-                                  setAssetPage(1);
-                                }}
-                              >
-                                查看资源
-                              </button>
-                              <PermissionButton
-                                permissionKey="button.cloud.account.update"
-                                className="btn cursor-pointer"
-                                type="button"
-                                onClick={() => openAccountEditDrawer(item)}
-                              >
-                                编辑
-                              </PermissionButton>
-                              <PermissionButton
-                                permissionKey="button.cloud.account.delete"
-                                className="btn cursor-pointer"
-                                type="button"
-                                disabled={accountDeleteID === item.id}
-                                onClick={() => void handleDeleteAccount(item.id)}
-                              >
-                                {accountDeleteID === item.id ? "删除中..." : "删除"}
-                              </PermissionButton>
+                              <RowActionOverflow
+                                title="云账号更多操作"
+                                actions={[
+                                  {
+                                    key: `${item.id}-verify`,
+                                    label: accountVerifyID === item.id ? "校验中..." : "校验",
+                                    permissionKey: "button.cloud.account.verify",
+                                    disabled: accountVerifyID === item.id,
+                                    onClick: () => void handleVerifyAccount(item.id),
+                                  },
+                                  {
+                                    key: `${item.id}-sync`,
+                                    label: accountSyncID === item.id ? "同步中..." : "同步",
+                                    permissionKey: "button.cloud.account.sync",
+                                    disabled: accountSyncID === item.id,
+                                    onClick: () => void handleSyncAccount(item.id),
+                                  },
+                                  {
+                                    key: `${item.id}-assets`,
+                                    label: "查看资源",
+                                    onClick: () => {
+                                      setSelectedAccountID(item.id);
+                                      setAssetPage(1);
+                                    },
+                                  },
+                                  {
+                                    key: `${item.id}-edit`,
+                                    label: "编辑",
+                                    permissionKey: "button.cloud.account.update",
+                                    onClick: () => openAccountEditDrawer(item),
+                                  },
+                                  {
+                                    key: `${item.id}-delete`,
+                                    label: accountDeleteID === item.id ? "删除中..." : "删除",
+                                    permissionKey: "button.cloud.account.delete",
+                                    disabled: accountDeleteID === item.id,
+                                    onClick: () => requestDeleteAccount(item),
+                                  },
+                                ]}
+                              />
                             </div>
                           </td>
                         )}
@@ -913,23 +953,24 @@ export function CloudPage() {
                         {assetVisibleColumnSet.has("actions") && (
                           <td>
                             <div className="rbac-row-actions">
-                              <PermissionButton
-                                permissionKey="button.cloud.asset.update"
-                                className="btn cursor-pointer"
-                                type="button"
-                                onClick={() => openAssetEditDrawer(item)}
-                              >
-                                编辑
-                              </PermissionButton>
-                              <PermissionButton
-                                permissionKey="button.cloud.asset.delete"
-                                className="btn cursor-pointer"
-                                type="button"
-                                disabled={assetDeleteID === item.id}
-                                onClick={() => void handleDeleteAsset(item.id)}
-                              >
-                                {assetDeleteID === item.id ? "删除中..." : "删除"}
-                              </PermissionButton>
+                              <RowActionOverflow
+                                title="云资源更多操作"
+                                actions={[
+                                  {
+                                    key: `${item.id}-edit`,
+                                    label: "编辑",
+                                    permissionKey: "button.cloud.asset.update",
+                                    onClick: () => openAssetEditDrawer(item),
+                                  },
+                                  {
+                                    key: `${item.id}-delete`,
+                                    label: assetDeleteID === item.id ? "删除中..." : "删除",
+                                    permissionKey: "button.cloud.asset.delete",
+                                    disabled: assetDeleteID === item.id || isRunningStatus(item.status),
+                                    onClick: () => requestDeleteAsset(item),
+                                  },
+                                ]}
+                              />
                             </div>
                           </td>
                         )}
@@ -1012,26 +1053,32 @@ export function CloudPage() {
                     onChange={(event) => setAccountForm((prev) => ({ ...prev, name: event.target.value }))}
                     placeholder="生产账号"
                   />
-                  <label htmlFor="cloud-account-ak">AccessKey</label>
+                  <label htmlFor="cloud-account-ak">{isTencentAccountProvider ? "AccessKey（SecretId）" : "AccessKey"}</label>
                   <input
                     id="cloud-account-ak"
                     value={accountForm.accessKey}
                     onChange={(event) => setAccountForm((prev) => ({ ...prev, accessKey: event.target.value }))}
-                    placeholder="AccessKey"
+                    placeholder={accountEditID ? "留空保持不变" : (isTencentAccountProvider ? "SecretId (AKID...)" : "AccessKey")}
                   />
-                  <label htmlFor="cloud-account-sk">SecretKey</label>
+                  <label htmlFor="cloud-account-sk">{isTencentAccountProvider ? "SecretKey（腾讯云）" : "SecretKey"}</label>
                   <input
                     id="cloud-account-sk"
                     value={accountForm.secretKey}
                     onChange={(event) => setAccountForm((prev) => ({ ...prev, secretKey: event.target.value }))}
-                    placeholder="SecretKey"
+                    placeholder={accountEditID ? "留空保持不变" : (isTencentAccountProvider ? "腾讯云 SecretKey" : "SecretKey")}
                   />
+                  {isTencentAccountProvider && (
+                    <>
+                      <span className="muted">腾讯云需填写 SecretId/SecretKey；开发环境可用 `mock_` 前缀触发模拟。</span>
+                      <span />
+                    </>
+                  )}
                   <label htmlFor="cloud-account-region">默认地域</label>
                   <input
                     id="cloud-account-region"
                     value={accountForm.region}
                     onChange={(event) => setAccountForm((prev) => ({ ...prev, region: event.target.value }))}
-                    placeholder="ap-southeast-1"
+                    placeholder={isTencentAccountProvider ? "ap-guangzhou" : "ap-southeast-1"}
                   />
                   <PermissionButton
                     permissionKey={accountEditID ? "button.cloud.account.update" : "button.cloud.account.create"}
@@ -1168,6 +1215,24 @@ export function CloudPage() {
           </aside>
         </div>
       )}
+
+      <DeleteConfirmModal
+        open={deleteAccountTarget !== null}
+        title="删除云账号确认"
+        description={`将删除云账号：${deleteAccountTarget?.name || "-"}（${deleteAccountTarget?.provider || "-"}）`}
+        confirming={deleteAccountTarget !== null && accountDeleteID === deleteAccountTarget.id}
+        onCancel={() => setDeleteAccountTarget(null)}
+        onConfirm={() => void confirmDeleteAccount()}
+      />
+
+      <DeleteConfirmModal
+        open={deleteAssetTarget !== null}
+        title="删除云资源确认"
+        description={`将删除云资源：${deleteAssetTarget?.name || deleteAssetTarget?.resourceId || "-"}`}
+        confirming={deleteAssetTarget !== null && assetDeleteID === deleteAssetTarget.id}
+        onCancel={() => setDeleteAssetTarget(null)}
+        onConfirm={() => void confirmDeleteAsset()}
+      />
     </section>
   );
 }
@@ -1218,4 +1283,22 @@ function formatDateTime(value?: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function isLikelyTencentSecretId(value: string): boolean {
+  return value.trim().toUpperCase().startsWith("AKID");
+}
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (!error || typeof error !== "object") return fallback;
+  const message = (error as { response?: { data?: { message?: unknown } } }).response?.data?.message;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  const generic = (error as { message?: unknown }).message;
+  if (typeof generic === "string" && generic.trim()) return generic.trim();
+  return fallback;
+}
+
+function isRunningStatus(status?: string): boolean {
+  const value = (status ?? "").trim().toLowerCase();
+  return value === "running" || value === "运行中";
 }
