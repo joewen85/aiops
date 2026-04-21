@@ -47,6 +47,60 @@
 
 - `VITE_WS_DEBUG`：WebSocket 调试日志开关（`true/1/on` 开启，默认 `false`）
 
+## 多云同步参数（腾讯云 SDK）
+
+为支持“真实对接腾讯云 SDK 同步资产”，后端新增以下环境变量（见 `backend/.env.example`）：
+
+- 腾讯云账号字段约定
+  - `accessKey` 对应腾讯云 `SecretId`（通常以 `AKID` 开头）
+  - `secretKey` 对应腾讯云 `SecretKey`
+
+- `CLOUD_SDK_MOCK_ENABLED`
+  - 用途：是否强制走模拟数据。
+  - 默认：`false`
+  - 建议：开发联调可设为 `true`；生产保持 `false`。
+- `CLOUD_SDK_MOCK_AK_PREFIX`
+  - 用途：当账号 `AccessKey` 以前缀开头时，走模拟数据。
+  - 默认：`mock_`
+  - 示例：`mock_test_ak_xxx`
+- `CLOUD_SDK_MOCK_SK_PREFIX`
+  - 用途：当账号 `SecretKey` 以前缀开头时，走模拟数据。
+  - 默认：`mock_`
+  - 示例：`mock_test_sk_xxx`
+- `ALIYUN_DEFAULT_REGION`
+  - 用途：阿里云账号未填写地域时使用的默认地域。
+  - 默认：`cn-hangzhou`
+  - 示例：`cn-shanghai`
+- `ALIYUN_SDK_TIMEOUT_SECONDS`
+  - 用途：阿里云 SDK 单次请求超时时间（秒）。
+  - 默认：`10`
+- `ALIYUN_SDK_PAGE_LIMIT`
+  - 用途：阿里云分页接口每次拉取条数（上限 100）。
+  - 默认：`100`
+- `TENCENT_DEFAULT_REGION`
+  - 用途：云账号未填写地域时使用的默认地域。
+  - 默认：`ap-guangzhou`
+  - 示例：`ap-shanghai`
+- `TENCENT_SDK_TIMEOUT_SECONDS`
+  - 用途：腾讯云 SDK 单次请求超时时间（秒）。
+  - 默认：`10`
+  - 建议：内网/跨地域网络波动时可提高到 `20-30`。
+- `TENCENT_SDK_PAGE_LIMIT`
+  - 用途：腾讯云分页接口每次拉取条数（上限 100）。
+  - 默认：`100`
+  - 建议：一般保持默认。
+
+推荐配置：
+
+- 开发环境（便于测试）
+  - `CLOUD_SDK_MOCK_ENABLED=false`
+  - `CLOUD_SDK_MOCK_AK_PREFIX=mock_`
+  - `CLOUD_SDK_MOCK_SK_PREFIX=mock_`
+  - 使用真实 AK/SK 即走真实 SDK；使用 `mock_` 前缀账号可快速走模拟数据。
+- 生产环境
+  - `CLOUD_SDK_MOCK_ENABLED=false`
+  - `CLOUD_SDK_MOCK_AK_PREFIX` / `CLOUD_SDK_MOCK_SK_PREFIX` 可改为内部专用前缀或留空（避免误触发模拟）。
+
 ## 安全基线与可信能力（RBAC/ABAC）
 
 当前版本已内置以下安全加固能力（默认启用或可配置启用）：

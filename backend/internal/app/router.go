@@ -147,6 +147,8 @@ func registerCMDBRoutes(r *gin.RouterGroup, h *handler.Handler) {
 	cmdb.GET("/resources/:id", h.GetResource)
 	cmdb.PUT("/resources/:id", h.UpdateResource)
 	cmdb.DELETE("/resources/:id", h.DeleteResource)
+	cmdb.POST("/resources/:id/actions/restart", h.RestartCMDBResource)
+	cmdb.POST("/resources/:id/actions/stop", h.StopCMDBResource)
 	cmdb.POST("/resources/:id/tags", h.BindResourceTags)
 	cmdb.GET("/resources/:id/upstream", h.GetResourceUpstream)
 	cmdb.GET("/resources/:id/downstream", h.GetResourceDownstream)

@@ -50,10 +50,24 @@ func New(
 		Executor: execRunner,
 		Config:   cfg,
 		CloudProviders: map[string]cloud.Provider{
-			"aws":     cloud.NewStubProvider("aws"),
-			"aliyun":  cloud.NewStubProvider("aliyun"),
-			"tencent": cloud.NewStubProvider("tencent"),
-			"huawei":  cloud.NewStubProvider("huawei"),
+			"aws": cloud.NewStubProvider("aws"),
+			"aliyun": cloud.NewAliyunProvider(cloud.AliyunProviderOptions{
+				MockEnabled:     cfg.CloudSDKMockEnabled,
+				MockAKPrefix:    cfg.CloudSDKMockAKPrefix,
+				MockSKPrefix:    cfg.CloudSDKMockSKPrefix,
+				DefaultRegion:   cfg.AliyunDefaultRegion,
+				RequestTimeoutS: cfg.AliyunSDKTimeoutSeconds,
+				PageLimit:       cfg.AliyunSDKPageLimit,
+			}),
+			"tencent": cloud.NewTencentProvider(cloud.TencentProviderOptions{
+				MockEnabled:     cfg.CloudSDKMockEnabled,
+				MockAKPrefix:    cfg.CloudSDKMockAKPrefix,
+				MockSKPrefix:    cfg.CloudSDKMockSKPrefix,
+				DefaultRegion:   cfg.TencentDefaultRegion,
+				RequestTimeoutS: cfg.TencentSDKTimeoutSeconds,
+				PageLimit:       cfg.TencentSDKPageLimit,
+			}),
+			"huawei": cloud.NewStubProvider("huawei"),
 		},
 		CloudCollector: cloud.NewDefaultResourceCollector(),
 		ModelProviders: map[string]ai.ModelProvider{

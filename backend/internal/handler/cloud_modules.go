@@ -235,28 +235,127 @@ func (h *Handler) UpdateCloudAsset(c *gin.Context) {
 func (h *Handler) DeleteCloudAsset(c *gin.Context) { deleteByModel[models.CloudAsset](c, h.DB) }
 
 func (h *Handler) syncCloudAssets(account models.CloudAccount, assets []cloud.Asset, source string) ([]models.CloudAsset, datatypes.JSONMap, error) {
-	savedAssets := make([]models.CloudAsset, 0, len(assets))
 	summary := datatypes.JSONMap{
 		"created": 0,
 		"updated": 0,
 		"failed":  0,
 	}
-	var runErrs []string
+	if len(assets) == 0 {
+		return []models.CloudAsset{}, summary, nil
+	}
+
+	latestByKey := make(map[string]models.CloudAsset, len(assets))
+	orderedKeys := make([]string, 0, len(assets))
 	for _, item := range assets {
 		normalized := buildCloudAssetFromProviderAsset(account, item, source)
-		saved, action, err := h.upsertCloudAsset(normalized)
-		if err != nil {
-			runErrs = append(runErrs, err.Error())
-			summary["failed"] = asInt(summary["failed"]) + 1
+		key := cloudAssetUniqueKey(normalized)
+		if _, exists := latestByKey[key]; !exists {
+			orderedKeys = append(orderedKeys, key)
+		}
+		latestByKey[key] = normalized
+	}
+
+	existingMap, err := h.loadCloudAssetsByAccount(account.ID)
+	if err != nil {
+		summary["failed"] = len(orderedKeys)
+		return nil, summary, err
+	}
+
+	createItems := make([]models.CloudAsset, 0)
+	type cloudAssetUpdateOp struct {
+		ID      uint
+		Updates map[string]interface{}
+	}
+	updateOps := make([]cloudAssetUpdateOp, 0)
+
+	for _, key := range orderedKeys {
+		input := latestByKey[key]
+		if existing, exists := existingMap[key]; exists {
+			updates := map[string]interface{}{
+				"name":           defaultString(input.Name, existing.Name),
+				"status":         defaultString(input.Status, existing.Status),
+				"source":         normalizeCloudAssetSource(defaultString(input.Source, existing.Source)),
+				"tags":           mergeJSONMap(existing.Tags, input.Tags, true),
+				"metadata":       mergeJSONMap(existing.Metadata, input.Metadata, true),
+				"last_synced_at": input.LastSyncedAt,
+				"expires_at":     input.ExpiresAt,
+			}
+			updateOps = append(updateOps, cloudAssetUpdateOp{ID: existing.ID, Updates: updates})
+			summary["updated"] = asInt(summary["updated"]) + 1
 			continue
 		}
-		summary[action] = asInt(summary[action]) + 1
+		createItems = append(createItems, input)
+		summary["created"] = asInt(summary["created"]) + 1
+	}
+
+	if err := h.DB.Transaction(func(tx *gorm.DB) error {
+		const batchSize = 200
+		if len(createItems) > 0 {
+			for start := 0; start < len(createItems); start += batchSize {
+				end := start + batchSize
+				if end > len(createItems) {
+					end = len(createItems)
+				}
+				chunk := createItems[start:end]
+				if err := tx.Create(&chunk).Error; err != nil {
+					return err
+				}
+			}
+		}
+		for _, op := range updateOps {
+			if err := tx.Model(&models.CloudAsset{}).Where("id = ?", op.ID).Updates(op.Updates).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		summary["failed"] = len(orderedKeys)
+		summary["created"] = 0
+		summary["updated"] = 0
+		return nil, summary, err
+	}
+
+	refreshedMap, err := h.loadCloudAssetsByAccount(account.ID)
+	if err != nil {
+		summary["failed"] = len(orderedKeys)
+		return nil, summary, err
+	}
+	savedAssets := make([]models.CloudAsset, 0, len(orderedKeys))
+	for _, key := range orderedKeys {
+		saved, ok := refreshedMap[key]
+		if !ok {
+			continue
+		}
 		savedAssets = append(savedAssets, saved)
 	}
-	if len(runErrs) > 0 {
-		return savedAssets, summary, errors.New(strings.Join(runErrs, "; "))
-	}
 	return savedAssets, summary, nil
+}
+
+func (h *Handler) loadCloudAssetsByAccount(accountID uint) (map[string]models.CloudAsset, error) {
+	result := map[string]models.CloudAsset{}
+	if accountID == 0 {
+		return result, nil
+	}
+	var items []models.CloudAsset
+	if err := h.DB.Where("account_id = ?", accountID).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		normalized := normalizeCloudAsset(item)
+		result[cloudAssetUniqueKey(normalized)] = item
+	}
+	return result, nil
+}
+
+func cloudAssetUniqueKey(item models.CloudAsset) string {
+	normalized := normalizeCloudAsset(item)
+	return strings.Join([]string{
+		normalized.Provider,
+		strconv.FormatUint(uint64(normalized.AccountID), 10),
+		normalized.Region,
+		normalized.Type,
+		strings.TrimSpace(normalized.ResourceID),
+	}, "\x1f")
 }
 
 func (h *Handler) upsertCloudAsset(input models.CloudAsset) (models.CloudAsset, string, error) {

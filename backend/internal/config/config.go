@@ -33,6 +33,16 @@ type Config struct {
 	OpenAIAPIKey      string
 	AnthropicEndpoint string
 	AnthropicAPIKey   string
+
+	CloudSDKMockEnabled      bool
+	CloudSDKMockAKPrefix     string
+	CloudSDKMockSKPrefix     string
+	AliyunDefaultRegion      string
+	AliyunSDKTimeoutSeconds  int
+	AliyunSDKPageLimit       int
+	TencentDefaultRegion     string
+	TencentSDKTimeoutSeconds int
+	TencentSDKPageLimit      int
 }
 
 var loadEnvOnce sync.Once
@@ -61,6 +71,15 @@ func Load() Config {
 		OpenAIAPIKey:                env("OPENAI_API_KEY", ""),
 		AnthropicEndpoint:           env("ANTHROPIC_ENDPOINT", "https://api.anthropic.com/v1/messages"),
 		AnthropicAPIKey:             env("ANTHROPIC_API_KEY", ""),
+		CloudSDKMockEnabled:         envBool("CLOUD_SDK_MOCK_ENABLED", false),
+		CloudSDKMockAKPrefix:        env("CLOUD_SDK_MOCK_AK_PREFIX", "mock_"),
+		CloudSDKMockSKPrefix:        env("CLOUD_SDK_MOCK_SK_PREFIX", "mock_"),
+		AliyunDefaultRegion:         env("ALIYUN_DEFAULT_REGION", "cn-hangzhou"),
+		AliyunSDKTimeoutSeconds:     envInt("ALIYUN_SDK_TIMEOUT_SECONDS", 10),
+		AliyunSDKPageLimit:          envInt("ALIYUN_SDK_PAGE_LIMIT", 100),
+		TencentDefaultRegion:        env("TENCENT_DEFAULT_REGION", "ap-guangzhou"),
+		TencentSDKTimeoutSeconds:    envInt("TENCENT_SDK_TIMEOUT_SECONDS", 10),
+		TencentSDKPageLimit:         envInt("TENCENT_SDK_PAGE_LIMIT", 100),
 	}
 }
 

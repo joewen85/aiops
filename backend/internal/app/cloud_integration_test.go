@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"devops-system/backend/internal/models"
@@ -37,6 +38,40 @@ func TestCloudAssetCRUDIntegration(t *testing.T) {
 	}
 	if _, ok := syncData["job"]; !ok {
 		t.Fatalf("expected sync response contains job")
+	}
+	if _, ok := syncData["assets"]; ok {
+		t.Fatalf("expected default sync response does not include provider assets")
+	}
+	if _, ok := syncData["cloudAssetItems"]; ok {
+		t.Fatalf("expected default sync response does not include cloud asset items")
+	}
+	if _, ok := syncData["cmdbResources"]; ok {
+		t.Fatalf("expected default sync response does not include cmdb resources")
+	}
+	if _, ok := syncData["providerAssetCount"]; !ok {
+		t.Fatalf("expected sync response contains providerAssetCount")
+	}
+	if _, ok := syncData["cloudAssetCount"]; !ok {
+		t.Fatalf("expected sync response contains cloudAssetCount")
+	}
+	if _, ok := syncData["cmdbAssetCount"]; !ok {
+		t.Fatalf("expected sync response contains cmdbAssetCount")
+	}
+
+	syncVerboseRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cloud/accounts/%d/sync?verbose=1", account.ID), adminToken, nil)
+	syncVerboseResp := assertOKResponse(t, syncVerboseRec)
+	var syncVerboseData map[string]json.RawMessage
+	if err := json.Unmarshal(syncVerboseResp.Data, &syncVerboseData); err != nil {
+		t.Fatalf("unmarshal verbose sync response failed: %v", err)
+	}
+	if _, ok := syncVerboseData["assets"]; !ok {
+		t.Fatalf("expected verbose sync response contains provider assets")
+	}
+	if _, ok := syncVerboseData["cloudAssetItems"]; !ok {
+		t.Fatalf("expected verbose sync response contains cloud asset items")
+	}
+	if _, ok := syncVerboseData["cmdbResources"]; !ok {
+		t.Fatalf("expected verbose sync response contains cmdb resources")
 	}
 
 	listAssetsRec := sendJSONRequest(t, router, http.MethodGet, "/api/v1/cloud/assets?page=1&pageSize=50", adminToken, nil)
@@ -184,6 +219,115 @@ func TestCloudAccountListFilterIntegration(t *testing.T) {
 	}
 	if len(accountFilterPage.List) != 1 || accountFilterPage.List[0].ID != accountA.ID {
 		t.Fatalf("expected matched account id=%d got=%+v", accountA.ID, accountFilterPage.List)
+	}
+}
+
+func TestCloudAccountSecurityAndSyncRobustnessIntegration(t *testing.T) {
+	router, _, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	const (
+		rawAccessKey = "AKIA-RAW-123456"
+		rawSecretKey = "SK-RAW-987654"
+	)
+	createRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/cloud/accounts", adminToken, map[string]any{
+		"provider":  "aws",
+		"name":      "aws-security",
+		"accessKey": rawAccessKey,
+		"secretKey": rawSecretKey,
+		"region":    "ap-southeast-1",
+	})
+	createResp := assertOKResponse(t, createRec)
+	var account models.CloudAccount
+	if err := json.Unmarshal(createResp.Data, &account); err != nil {
+		t.Fatalf("unmarshal cloud account failed: %v", err)
+	}
+	if account.ID == 0 {
+		t.Fatalf("expected cloud account id > 0")
+	}
+	if strings.Contains(account.AccessKey, rawAccessKey) || strings.Contains(account.SecretKey, rawSecretKey) {
+		t.Fatalf("expected masked credentials in response, got accessKey=%s secretKey=%s", account.AccessKey, account.SecretKey)
+	}
+
+	getRec := sendJSONRequest(t, router, http.MethodGet, fmt.Sprintf("/api/v1/cloud/accounts/%d", account.ID), adminToken, nil)
+	getResp := assertOKResponse(t, getRec)
+	var getAccount models.CloudAccount
+	if err := json.Unmarshal(getResp.Data, &getAccount); err != nil {
+		t.Fatalf("unmarshal cloud account detail failed: %v", err)
+	}
+	if strings.Contains(getAccount.AccessKey, rawAccessKey) || strings.Contains(getAccount.SecretKey, rawSecretKey) {
+		t.Fatalf("expected masked credentials in detail response")
+	}
+
+	// patch non-whitelisted field should not elevate verification status.
+	patchRec := sendJSONRequest(t, router, http.MethodPut, fmt.Sprintf("/api/v1/cloud/accounts/%d", account.ID), adminToken, map[string]any{
+		"isVerified": true,
+	})
+	patchResp := assertOKResponse(t, patchRec)
+	var patched models.CloudAccount
+	if err := json.Unmarshal(patchResp.Data, &patched); err != nil {
+		t.Fatalf("unmarshal patched cloud account failed: %v", err)
+	}
+	if patched.IsVerified {
+		t.Fatalf("expected isVerified remains false when patching protected field")
+	}
+
+	// update without AK/SK should keep existing credentials and still verify/sync.
+	updateRec := sendJSONRequest(t, router, http.MethodPut, fmt.Sprintf("/api/v1/cloud/accounts/%d", account.ID), adminToken, map[string]any{
+		"name": "aws-security-updated",
+	})
+	_ = assertOKResponse(t, updateRec)
+
+	verifyRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cloud/accounts/%d/verify", account.ID), adminToken, nil)
+	_ = assertOKResponse(t, verifyRec)
+
+	syncRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cloud/accounts/%d/sync", account.ID), adminToken, nil)
+	_ = assertOKResponse(t, syncRec)
+
+	verify404 := sendJSONRequest(t, router, http.MethodPost, "/api/v1/cloud/accounts/999999/verify", adminToken, nil)
+	if verify404.Code != http.StatusNotFound {
+		t.Fatalf("expected verify missing account returns 404, got=%d body=%s", verify404.Code, verify404.Body.String())
+	}
+	sync404 := sendJSONRequest(t, router, http.MethodPost, "/api/v1/cloud/accounts/999999/sync", adminToken, nil)
+	if sync404.Code != http.StatusNotFound {
+		t.Fatalf("expected sync missing account returns 404, got=%d body=%s", sync404.Code, sync404.Body.String())
+	}
+}
+
+func TestCloudAccountTencentUpdateFromLegacyInvalidCredentialIntegration(t *testing.T) {
+	router, database, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	legacy := models.CloudAccount{
+		Provider:   "tencent",
+		Name:       "tencent-legacy",
+		AccessKey:  "legacy-invalid-ak",
+		SecretKey:  "legacy-invalid-sk",
+		Region:     "ap-guangzhou",
+		IsVerified: false,
+	}
+	if err := database.Create(&legacy).Error; err != nil {
+		t.Fatalf("create legacy cloud account failed: %v", err)
+	}
+
+	updateRec := sendJSONRequest(
+		t,
+		router,
+		http.MethodPut,
+		fmt.Sprintf("/api/v1/cloud/accounts/%d", legacy.ID),
+		adminToken,
+		map[string]any{
+			"accessKey": "AKIDNEWVALID1234567890",
+			"secretKey": "new-valid-secret-key",
+		},
+	)
+	updateResp := assertOKResponse(t, updateRec)
+	var updated models.CloudAccount
+	if err := json.Unmarshal(updateResp.Data, &updated); err != nil {
+		t.Fatalf("unmarshal updated cloud account failed: %v", err)
+	}
+	if updated.ID != legacy.ID {
+		t.Fatalf("expected updated account id=%d got=%d", legacy.ID, updated.ID)
 	}
 }
 

@@ -294,6 +294,47 @@ current-context: live
 	}
 }
 
+func TestCMDBResourceDetailAndVMActionValidationIntegration(t *testing.T) {
+	router, _, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	vm := createCMDBResourceViaAPI(t, router, adminToken, map[string]any{
+		"ciId":      "cmdb:vm:manual-001",
+		"type":      "VM",
+		"name":      "manual-vm-001",
+		"cloud":     "aliyun",
+		"region":    "cn-hangzhou",
+		"env":       "prod",
+		"owner":     "platform",
+		"source":    "Manual",
+		"lifecycle": "active",
+		"attributes": map[string]any{
+			"cpu":       "2",
+			"memory":    "4Gi",
+			"privateIp": "10.0.0.10",
+		},
+	})
+
+	getRec := sendJSONRequest(t, router, http.MethodGet, fmt.Sprintf("/api/v1/cmdb/resources/%d", vm.ID), adminToken, nil)
+	getResp := assertOKResponse(t, getRec)
+	var fetched models.ResourceItem
+	if err := json.Unmarshal(getResp.Data, &fetched); err != nil {
+		t.Fatalf("unmarshal cmdb resource detail failed: %v", err)
+	}
+	if fetched.ID != vm.ID {
+		t.Fatalf("unexpected resource detail id=%d expected=%d", fetched.ID, vm.ID)
+	}
+	if fetched.CIID != vm.CIID {
+		t.Fatalf("unexpected resource detail ciId=%s expected=%s", fetched.CIID, vm.CIID)
+	}
+
+	restartRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cmdb/resources/%d/actions/restart", vm.ID), adminToken, nil)
+	assertErrorResponse(t, restartRec, http.StatusBadRequest, 3001, "resource accountId is empty")
+
+	stopRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cmdb/resources/%d/actions/stop", vm.ID), adminToken, nil)
+	assertErrorResponse(t, stopRec, http.StatusBadRequest, 3001, "resource accountId is empty")
+}
+
 func createCMDBResourceViaAPI(t *testing.T, router *gin.Engine, token string, payload map[string]any) models.ResourceItem {
 	t.Helper()
 	rec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/cmdb/resources", token, payload)

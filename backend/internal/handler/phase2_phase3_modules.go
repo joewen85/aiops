@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -8,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 
 	"devops-system/backend/internal/ai"
 	"devops-system/backend/internal/cloud"
@@ -51,11 +54,188 @@ func (h *Handler) ListCloudAccounts(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
-	response.List(c, items, total, page.Page, page.PageSize)
+	responseItems := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		responseItems = append(responseItems, cloudAccountResponse(item))
+	}
+	response.List(c, responseItems, total, page.Page, page.PageSize)
 }
-func (h *Handler) GetCloudAccount(c *gin.Context)    { getByID[models.CloudAccount](c, h.DB) }
-func (h *Handler) CreateCloudAccount(c *gin.Context) { createByModel[models.CloudAccount](c, h.DB) }
-func (h *Handler) UpdateCloudAccount(c *gin.Context) { updateByModel[models.CloudAccount](c, h.DB) }
+
+func (h *Handler) GetCloudAccount(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var account models.CloudAccount
+	if err := h.DB.First(&account, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, appErr.ErrNotFound)
+			return
+		}
+		response.Internal(c, err)
+		return
+	}
+	response.Success(c, cloudAccountResponse(account))
+}
+
+func (h *Handler) CreateCloudAccount(c *gin.Context) {
+	var req struct {
+		Provider  string `json:"provider" binding:"required"`
+		Name      string `json:"name" binding:"required"`
+		AccessKey string `json:"accessKey" binding:"required"`
+		SecretKey string `json:"secretKey" binding:"required"`
+		Region    string `json:"region"`
+	}
+	if !bindJSON(c, &req) {
+		return
+	}
+
+	provider := normalizeCloudProvider(req.Provider)
+	if provider == "" {
+		response.Error(c, http.StatusBadRequest, appErr.New(3001, "provider cannot be empty"))
+		return
+	}
+	if _, exists := h.CloudProviders[provider]; !exists {
+		response.Error(c, http.StatusBadRequest, appErr.New(4003, "unsupported cloud provider"))
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		response.Error(c, http.StatusBadRequest, appErr.New(3001, "name cannot be empty"))
+		return
+	}
+	accessKey := strings.TrimSpace(req.AccessKey)
+	secretKey := strings.TrimSpace(req.SecretKey)
+	if accessKey == "" || secretKey == "" {
+		response.Error(c, http.StatusBadRequest, appErr.New(3001, "accessKey and secretKey are required"))
+		return
+	}
+	if err := validateCloudCredentialInput(provider, accessKey, secretKey); err != nil {
+		response.Error(c, http.StatusBadRequest, appErr.New(3001, err.Error()))
+		return
+	}
+
+	account := models.CloudAccount{
+		Provider:   provider,
+		Name:       name,
+		AccessKey:  accessKey,
+		SecretKey:  secretKey,
+		Region:     defaultString(strings.TrimSpace(req.Region), "global"),
+		IsVerified: false,
+	}
+	if err := h.DB.Create(&account).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.Success(c, cloudAccountResponse(account))
+}
+
+func (h *Handler) UpdateCloudAccount(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	var account models.CloudAccount
+	if err := h.DB.First(&account, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, appErr.ErrNotFound)
+			return
+		}
+		response.Internal(c, err)
+		return
+	}
+
+	var req struct {
+		Provider  *string `json:"provider"`
+		Name      *string `json:"name"`
+		AccessKey *string `json:"accessKey"`
+		SecretKey *string `json:"secretKey"`
+		Region    *string `json:"region"`
+	}
+	if !bindJSON(c, &req) {
+		return
+	}
+
+	updates := map[string]interface{}{}
+	credentialChanged := false
+	targetProvider := account.Provider
+	nextAccessKey := strings.TrimSpace(account.AccessKey)
+	nextSecretKey := strings.TrimSpace(account.SecretKey)
+	providerChanged := false
+
+	if req.Provider != nil {
+		provider := normalizeCloudProvider(*req.Provider)
+		if provider == "" {
+			response.Error(c, http.StatusBadRequest, appErr.New(3001, "provider cannot be empty"))
+			return
+		}
+		if _, exists := h.CloudProviders[provider]; !exists {
+			response.Error(c, http.StatusBadRequest, appErr.New(4003, "unsupported cloud provider"))
+			return
+		}
+		if provider != account.Provider {
+			updates["provider"] = provider
+			credentialChanged = true
+			providerChanged = true
+		}
+		targetProvider = provider
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			response.Error(c, http.StatusBadRequest, appErr.New(3001, "name cannot be empty"))
+			return
+		}
+		updates["name"] = name
+	}
+	if req.Region != nil {
+		region := defaultString(strings.TrimSpace(*req.Region), "global")
+		if region != account.Region {
+			updates["region"] = region
+			credentialChanged = true
+		}
+	}
+	if req.AccessKey != nil {
+		accessKey := strings.TrimSpace(*req.AccessKey)
+		if accessKey != "" && accessKey != account.AccessKey {
+			updates["access_key"] = accessKey
+			credentialChanged = true
+			nextAccessKey = accessKey
+		}
+	}
+	if req.SecretKey != nil {
+		secretKey := strings.TrimSpace(*req.SecretKey)
+		if secretKey != "" && secretKey != account.SecretKey {
+			updates["secret_key"] = secretKey
+			credentialChanged = true
+			nextSecretKey = secretKey
+		}
+	}
+	if shouldValidateAccountCredential(req, providerChanged) {
+		if err := validateCloudCredentialInput(targetProvider, nextAccessKey, nextSecretKey); err != nil {
+			response.Error(c, http.StatusBadRequest, appErr.New(3001, err.Error()))
+			return
+		}
+	}
+	if credentialChanged {
+		updates["is_verified"] = false
+	}
+	if len(updates) == 0 {
+		response.Success(c, cloudAccountResponse(account))
+		return
+	}
+	if err := h.DB.Model(&models.CloudAccount{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	var saved models.CloudAccount
+	if err := h.DB.First(&saved, id).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.Success(c, cloudAccountResponse(saved))
+}
+
 func (h *Handler) DeleteCloudAccount(c *gin.Context) { deleteByModel[models.CloudAccount](c, h.DB) }
 
 func (h *Handler) VerifyCloudAccount(c *gin.Context) {
@@ -65,6 +245,10 @@ func (h *Handler) VerifyCloudAccount(c *gin.Context) {
 	}
 	var account models.CloudAccount
 	if err := h.DB.First(&account, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, appErr.ErrNotFound)
+			return
+		}
 		response.Internal(c, err)
 		return
 	}
@@ -89,8 +273,13 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 	if !ok {
 		return
 	}
+	verbose := parseVerboseQuery(c.Query("verbose"))
 	var account models.CloudAccount
 	if err := h.DB.First(&account, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(c, http.StatusNotFound, appErr.ErrNotFound)
+			return
+		}
 		response.Internal(c, err)
 		return
 	}
@@ -170,15 +359,92 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
-	response.Success(c, gin.H{
-		"id":            id,
-		"job":           savedJob,
-		"assets":        assets,
-		"cloudAssets":   cloudAssets,
-		"syncSummary":   syncSummary,
-		"cmdbResources": cmdbResources,
-		"cmdbAssets":    asCloudAssetSlice(cmdbResources),
-	})
+	payload := gin.H{
+		"id":                 id,
+		"job":                savedJob,
+		"syncSummary":        syncSummary,
+		"providerAssetCount": len(assets),
+		"cloudAssetCount":    len(cloudAssets),
+		"cmdbAssetCount":     len(cmdbResources),
+	}
+	if verbose {
+		payload["assets"] = assets
+		payload["cloudAssetItems"] = cloudAssets
+		payload["cmdbResources"] = cmdbResources
+		payload["cmdbAssetItems"] = asCloudAssetSlice(cmdbResources)
+	}
+	response.Success(c, payload)
+}
+
+func normalizeCloudProvider(provider string) string {
+	return strings.ToLower(strings.TrimSpace(provider))
+}
+
+func validateCloudCredentialInput(provider string, accessKey string, secretKey string) error {
+	normalizedProvider := normalizeCloudProvider(provider)
+	ak := strings.TrimSpace(accessKey)
+	sk := strings.TrimSpace(secretKey)
+	if strings.Contains(ak, "*") || strings.Contains(sk, "*") {
+		return fmt.Errorf("credential looks masked, please input original accessKey/secretKey")
+	}
+	if normalizedProvider == "tencent" && ak != "" && !strings.HasPrefix(strings.ToUpper(ak), "AKID") {
+		return fmt.Errorf("tencent accessKey should be SecretId (normally starts with AKID)")
+	}
+	return nil
+}
+
+func shouldValidateAccountCredential(req struct {
+	Provider  *string `json:"provider"`
+	Name      *string `json:"name"`
+	AccessKey *string `json:"accessKey"`
+	SecretKey *string `json:"secretKey"`
+	Region    *string `json:"region"`
+}, providerChanged bool) bool {
+	if providerChanged {
+		return true
+	}
+	if req.AccessKey != nil && strings.TrimSpace(*req.AccessKey) != "" {
+		return true
+	}
+	if req.SecretKey != nil && strings.TrimSpace(*req.SecretKey) != "" {
+		return true
+	}
+	return false
+}
+
+func cloudAccountResponse(account models.CloudAccount) gin.H {
+	return gin.H{
+		"id":         account.ID,
+		"provider":   account.Provider,
+		"name":       account.Name,
+		"accessKey":  maskCloudCredential(account.AccessKey),
+		"secretKey":  maskCloudCredential(account.SecretKey),
+		"region":     account.Region,
+		"isVerified": account.IsVerified,
+		"createdAt":  account.CreatedAt,
+		"updatedAt":  account.UpdatedAt,
+	}
+}
+
+func maskCloudCredential(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= 4 {
+		return "****"
+	}
+	return string(runes[:2]) + "****" + string(runes[len(runes)-2:])
+}
+
+func parseVerboseQuery(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *Handler) ListTickets(c *gin.Context)  { listByModel[models.Ticket](c, h.DB) }
