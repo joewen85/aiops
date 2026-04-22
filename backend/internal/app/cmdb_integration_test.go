@@ -294,6 +294,46 @@ current-context: live
 	}
 }
 
+func TestCMDBSyncJobRejectWhenRunningIntegration(t *testing.T) {
+	router, db, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	now := time.Now()
+	if err := db.Create(&models.ResourceSyncJob{
+		Status:    "running",
+		StartedAt: &now,
+	}).Error; err != nil {
+		t.Fatalf("seed running cmdb sync job failed: %v", err)
+	}
+	jobRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/cmdb/sync/jobs", adminToken, map[string]any{
+		"sources":  []string{"Manual"},
+		"fullScan": false,
+	})
+	assertErrorResponse(t, jobRec, http.StatusConflict, 4013, "cmdb sync job is already running")
+
+	done := time.Now()
+	if err := db.Model(&models.ResourceSyncJob{}).Where("status = ?", "running").Updates(map[string]any{
+		"status":      "success",
+		"finished_at": &done,
+	}).Error; err != nil {
+		t.Fatalf("close running cmdb sync job failed: %v", err)
+	}
+
+	original := models.ResourceSyncJob{Status: "success"}
+	if err := db.Create(&original).Error; err != nil {
+		t.Fatalf("seed original cmdb sync job failed: %v", err)
+	}
+	now = time.Now()
+	if err := db.Create(&models.ResourceSyncJob{
+		Status:    "running",
+		StartedAt: &now,
+	}).Error; err != nil {
+		t.Fatalf("seed second running cmdb sync job failed: %v", err)
+	}
+	retryRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cmdb/sync/jobs/%d/retry", original.ID), adminToken, nil)
+	assertErrorResponse(t, retryRec, http.StatusConflict, 4013, "cmdb sync job is already running")
+}
+
 func TestCMDBResourceDetailAndVMActionValidationIntegration(t *testing.T) {
 	router, _, _ := newRouterForIntegrationTest(t)
 	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
@@ -333,6 +373,65 @@ func TestCMDBResourceDetailAndVMActionValidationIntegration(t *testing.T) {
 
 	stopRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cmdb/resources/%d/actions/stop", vm.ID), adminToken, nil)
 	assertErrorResponse(t, stopRec, http.StatusBadRequest, 3001, "resource accountId is empty")
+}
+
+func TestCMDBVMActionRejectUnsyncedResourceIntegration(t *testing.T) {
+	router, db, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	account := models.CloudAccount{
+		Provider:   "aliyun",
+		Name:       "aliyun-prod",
+		AccessKey:  "ak",
+		SecretKey:  "sk",
+		Region:     "cn-hangzhou",
+		IsVerified: true,
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("seed cloud account failed: %v", err)
+	}
+
+	vm := createCMDBResourceViaAPI(t, router, adminToken, map[string]any{
+		"ciId":      "aliyun:manual:cn-hangzhou:vm:blocked-001",
+		"type":      "VM",
+		"name":      "blocked-vm",
+		"cloud":     "aliyun",
+		"region":    "cn-hangzhou",
+		"env":       "prod",
+		"owner":     "platform",
+		"source":    "CloudAPI",
+		"lifecycle": "active",
+		"attributes": map[string]any{
+			"accountId":  account.ID,
+			"instanceId": "i-blocked001",
+		},
+	})
+
+	restartRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cmdb/resources/%d/actions/restart", vm.ID), adminToken, nil)
+	assertErrorResponse(t, restartRec, http.StatusBadRequest, 3001, "resource is not linked to synced cloud asset")
+}
+
+func TestCMDBDeleteResourceRejectRunningStatusIntegration(t *testing.T) {
+	router, _, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	vm := createCMDBResourceViaAPI(t, router, adminToken, map[string]any{
+		"ciId":      "aliyun:cn-hangzhou:vm:running-delete-block",
+		"type":      "VM",
+		"name":      "running-vm",
+		"cloud":     "aliyun",
+		"region":    "cn-hangzhou",
+		"env":       "prod",
+		"owner":     "platform",
+		"source":    "CloudAPI",
+		"lifecycle": "active",
+		"attributes": map[string]any{
+			"status": "RUNNING",
+		},
+	})
+
+	deleteRec := sendJSONRequest(t, router, http.MethodDelete, fmt.Sprintf("/api/v1/cmdb/resources/%d", vm.ID), adminToken, nil)
+	assertErrorResponse(t, deleteRec, http.StatusBadRequest, 3013, "resource is running, stop it before deletion")
 }
 
 func createCMDBResourceViaAPI(t *testing.T, router *gin.Engine, token string, payload map[string]any) models.ResourceItem {

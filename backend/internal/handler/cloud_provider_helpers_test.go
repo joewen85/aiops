@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"devops-system/backend/internal/cloud"
+	"devops-system/backend/internal/config"
+	"devops-system/backend/internal/models"
 )
 
 func TestCloudProviderByName(t *testing.T) {
@@ -46,5 +48,37 @@ func TestValidateCloudCredentialInput(t *testing.T) {
 	}
 	if err := validateCloudCredentialInput("tencent", "AKID_TEST", "secret"); err != nil {
 		t.Fatalf("expected valid credential, got %v", err)
+	}
+}
+
+func TestCloudAccountCredentials(t *testing.T) {
+	h := &Handler{
+		Config: config.Config{
+			JWTSecret: "unit-test-jwt-secret",
+		},
+	}
+	if _, err := h.cloudAccountCredentials(nil); err == nil {
+		t.Fatalf("expected nil cloud account error")
+	}
+
+	encryptedAK, err := h.encryptCloudCredential("AKID_TEST")
+	if err != nil {
+		t.Fatalf("encrypt access key failed: %v", err)
+	}
+	encryptedSK, err := h.encryptCloudCredential("SECRET_TEST")
+	if err != nil {
+		t.Fatalf("encrypt secret key failed: %v", err)
+	}
+
+	cred, err := h.cloudAccountCredentials(&models.CloudAccount{
+		AccessKey: encryptedAK,
+		SecretKey: encryptedSK,
+		Region:    "ap-guangzhou",
+	})
+	if err != nil {
+		t.Fatalf("resolve cloud account credentials failed: %v", err)
+	}
+	if cred.AccessKey != "AKID_TEST" || cred.SecretKey != "SECRET_TEST" {
+		t.Fatalf("unexpected credentials %+v", cred)
 	}
 }

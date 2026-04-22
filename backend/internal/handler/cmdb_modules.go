@@ -22,7 +22,8 @@ import (
 )
 
 var (
-	cmdbSourcePriority = map[string]int{
+	cmdbSyncRunningMessage = "cmdb sync job is already running"
+	cmdbSourcePriority     = map[string]int{
 		"IaC":      5,
 		"CloudAPI": 4,
 		"K8s":      3,
@@ -208,6 +209,10 @@ func (h *Handler) DeleteResource(c *gin.Context) {
 			return
 		}
 		response.Internal(c, err)
+		return
+	}
+	if status := readCMDBRuntimeStatus(item.Attributes); isCMDBRunningStatus(status) {
+		response.Error(c, http.StatusBadRequest, appErr.New(3013, "resource is running, stop it before deletion"))
 		return
 	}
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
@@ -548,6 +553,16 @@ func (h *Handler) CreateCMDBSyncJob(c *gin.Context) {
 	if c.Request.ContentLength > 0 && !bindJSON(c, &req) {
 		return
 	}
+	releaseLock, acquired, lockErr := h.tryAcquireCMDBSyncLock()
+	if lockErr != nil {
+		response.Internal(c, lockErr)
+		return
+	}
+	if !acquired {
+		response.Error(c, http.StatusConflict, appErr.New(4013, cmdbSyncRunningMessage))
+		return
+	}
+	defer releaseLock()
 	sources := normalizeSourceList(req.Sources)
 	now := time.Now()
 	requested, _ := json.Marshal(sources)
@@ -568,7 +583,7 @@ func (h *Handler) CreateCMDBSyncJob(c *gin.Context) {
 	status := "success"
 	if runErr != nil {
 		status = "failed"
-		summary["error"] = runErr.Error()
+		summary["error"] = h.cloudProviderExternalError("cmdb sync job failed", runErr)
 	}
 	if err := h.DB.Model(&models.ResourceSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
 		"status":      status,
@@ -625,6 +640,16 @@ func (h *Handler) RetryCMDBSyncJob(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
+	releaseLock, acquired, lockErr := h.tryAcquireCMDBSyncLock()
+	if lockErr != nil {
+		response.Internal(c, lockErr)
+		return
+	}
+	if !acquired {
+		response.Error(c, http.StatusConflict, appErr.New(4013, cmdbSyncRunningMessage))
+		return
+	}
+	defer releaseLock()
 	var sources []string
 	if len(original.RequestedSources) > 0 {
 		_ = json.Unmarshal(original.RequestedSources, &sources)
@@ -648,7 +673,7 @@ func (h *Handler) RetryCMDBSyncJob(c *gin.Context) {
 	status := "success"
 	if runErr != nil {
 		status = "failed"
-		summary["error"] = runErr.Error()
+		summary["error"] = h.cloudProviderExternalError("cmdb sync job failed", runErr)
 	}
 	if err := h.DB.Model(&models.ResourceSyncJob{}).Where("id = ?", retryJob.ID).Updates(map[string]interface{}{
 		"status":      status,
@@ -820,7 +845,7 @@ func (h *Handler) runCMDBSync(jobID uint, sources []string, fullScan bool) (data
 						Source:  source,
 						Action:  "relation_upsert",
 						Status:  "failed",
-						Message: err.Error(),
+						Message: h.cloudProviderExternalWarning("cmdb relation upsert failed", err),
 					}).Error
 					continue
 				}
@@ -861,7 +886,7 @@ func (h *Handler) applyResourceCandidates(jobID uint, candidates []cmdbResourceC
 				Source:  normalizeCMDBSource(candidate.Source),
 				Action:  "upsert",
 				Status:  "failed",
-				Message: err.Error(),
+				Message: h.cloudProviderExternalWarning("cmdb resource upsert failed", err),
 			}).Error
 			continue
 		}
@@ -918,7 +943,7 @@ func (h *Handler) collectIaCCandidates() []cmdbResourceCandidate {
 func (h *Handler) collectCloudCandidates() ([]cmdbResourceCandidate, []string) {
 	var accounts []models.CloudAccount
 	if err := h.DB.Find(&accounts).Error; err != nil {
-		return nil, []string{err.Error()}
+		return nil, []string{h.cloudProviderExternalWarning("load cloud accounts failed", err)}
 	}
 	now := time.Now()
 	candidates := make([]cmdbResourceCandidate, 0)
@@ -929,7 +954,7 @@ func (h *Handler) collectCloudCandidates() ([]cmdbResourceCandidate, []string) {
 			warnings = append(warnings, h.cloudProviderExternalWarning(fmt.Sprintf("cloud account %d provider error", account.ID), providerErr))
 			continue
 		}
-		cred, credErr := h.cloudCredentials(account)
+		cred, credErr := h.cloudAccountCredentials(&account)
 		if credErr != nil {
 			warnings = append(warnings, h.cloudProviderExternalWarning(fmt.Sprintf("cloud account %d credential error", account.ID), credErr))
 			continue
@@ -1341,6 +1366,14 @@ func normalizeSourceList(sources []string) []string {
 	return list
 }
 
+func (h *Handler) cmdbSyncRunning() (bool, error) {
+	var runningCount int64
+	if err := h.DB.Model(&models.ResourceSyncJob{}).Where("lower(status) = ?", "running").Count(&runningCount).Error; err != nil {
+		return false, err
+	}
+	return runningCount > 0, nil
+}
+
 func buildCMDBCIID(item models.ResourceItem) string {
 	itemType := strings.TrimSpace(strings.ToLower(item.Type))
 	cloudName := normalizeToken(item.Cloud)
@@ -1538,6 +1571,37 @@ func appendWarnings(summary datatypes.JSONMap, warnings []string) {
 	}
 	current = append(current, warnings...)
 	summary["warnings"] = current
+}
+
+func readCMDBRuntimeStatus(attrs datatypes.JSONMap) string {
+	status := strings.ToLower(strings.TrimSpace(readStringAttr(attrs, "status", "state", "runtimeStatus", "runtime_status")))
+	if status != "" {
+		return status
+	}
+	if attrs == nil {
+		return ""
+	}
+	rawMetadata, ok := attrs["metadata"]
+	if !ok || rawMetadata == nil {
+		return ""
+	}
+	switch metadata := rawMetadata.(type) {
+	case map[string]interface{}:
+		return strings.ToLower(strings.TrimSpace(readMapString(metadata, "status", "state")))
+	case datatypes.JSONMap:
+		return strings.ToLower(strings.TrimSpace(readStringAttr(metadata, "status", "state")))
+	default:
+		return ""
+	}
+}
+
+func isCMDBRunningStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "running", "active", "starting", "pending", "booting", "provisioning", "initializing", "inservice":
+		return true
+	default:
+		return false
+	}
 }
 
 func buildCloudResourceAttributes(account models.CloudAccount, asset cloud.Asset) datatypes.JSONMap {

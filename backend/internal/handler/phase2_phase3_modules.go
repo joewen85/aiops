@@ -163,13 +163,9 @@ func (h *Handler) UpdateCloudAccount(c *gin.Context) {
 	updates := map[string]interface{}{}
 	credentialChanged := false
 	targetProvider := account.Provider
-	currentCred, credErr := h.cloudCredentials(account)
+	currentCred, credErr := h.cloudAccountCredentials(&account)
 	if credErr != nil {
 		response.Internal(c, credErr)
-		return
-	}
-	if migrateErr := h.migrateCloudCredentialsIfPlain(&account, currentCred); migrateErr != nil {
-		response.Internal(c, migrateErr)
 		return
 	}
 	nextAccessKey := strings.TrimSpace(currentCred.AccessKey)
@@ -276,13 +272,9 @@ func (h *Handler) VerifyCloudAccount(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, cloudProviderResolveAppError(providerErr))
 		return
 	}
-	cred, credErr := h.cloudCredentials(account)
+	cred, credErr := h.cloudAccountCredentials(&account)
 	if credErr != nil {
 		response.Internal(c, credErr)
-		return
-	}
-	if migrateErr := h.migrateCloudCredentialsIfPlain(&account, cred); migrateErr != nil {
-		response.Internal(c, migrateErr)
 		return
 	}
 	if err := provider.Verify(cred); err != nil {
@@ -325,13 +317,9 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 		response.Error(c, http.StatusConflict, appErr.New(4012, "cloud account sync is already running"))
 		return
 	}
-	cred, credErr := h.cloudCredentials(account)
+	cred, credErr := h.cloudAccountCredentials(&account)
 	if credErr != nil {
 		response.Internal(c, credErr)
-		return
-	}
-	if migrateErr := h.migrateCloudCredentialsIfPlain(&account, cred); migrateErr != nil {
-		response.Internal(c, migrateErr)
 		return
 	}
 	started := time.Now()

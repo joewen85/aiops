@@ -19,9 +19,16 @@ import (
 	tencentCVM "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm/v20170312"
 	"gorm.io/gorm"
 
+	"devops-system/backend/internal/cloud"
 	appErr "devops-system/backend/internal/errors"
 	"devops-system/backend/internal/models"
 	"devops-system/backend/internal/response"
+)
+
+var (
+	errCMDBVMActionUnsupportedSource = errors.New("resource source is not CloudAPI, action is unsupported")
+	errCMDBVMActionNotSynced         = errors.New("resource is not linked to synced cloud asset")
+	errCMDBVMActionAssetMismatch     = errors.New("resource cloud asset mapping mismatch")
 )
 
 func (h *Handler) RestartCMDBResource(c *gin.Context) {
@@ -72,6 +79,17 @@ func (h *Handler) handleCMDBVMAction(c *gin.Context, action string) {
 		response.Error(c, http.StatusBadRequest, appErr.New(3001, "resource cloud provider mismatches account provider"))
 		return
 	}
+	if err := h.ensureCMDBVMActionAuthorized(resource, account.ID, instanceID, resolvedProvider); err != nil {
+		switch {
+		case errors.Is(err, errCMDBVMActionUnsupportedSource),
+			errors.Is(err, errCMDBVMActionNotSynced),
+			errors.Is(err, errCMDBVMActionAssetMismatch):
+			response.Error(c, http.StatusBadRequest, appErr.New(3001, err.Error()))
+		default:
+			response.Internal(c, err)
+		}
+		return
+	}
 	if region == "" || strings.EqualFold(region, "global") {
 		region = strings.TrimSpace(account.Region)
 	}
@@ -88,8 +106,14 @@ func (h *Handler) handleCMDBVMAction(c *gin.Context, action string) {
 		return
 	}
 
-	if err := h.executeVMAction(account, resolvedProvider, region, instanceID, action); err != nil {
-		response.Error(c, http.StatusBadRequest, appErr.New(4006, err.Error()))
+	cred, credErr := h.cloudAccountCredentials(&account)
+	if credErr != nil {
+		response.Internal(c, credErr)
+		return
+	}
+
+	if err := h.executeVMAction(resolvedProvider, cred, region, instanceID, action); err != nil {
+		response.Error(c, http.StatusBadRequest, appErr.New(4006, h.cloudProviderExternalError("vm action request failed", err)))
 		return
 	}
 
@@ -123,22 +147,64 @@ func (h *Handler) extractCMDBVMActionContext(resource models.ResourceItem) (uint
 	return accountID, instanceID, region, provider, nil
 }
 
-func (h *Handler) executeVMAction(account models.CloudAccount, provider string, region string, instanceID string, action string) error {
+func (h *Handler) ensureCMDBVMActionAuthorized(resource models.ResourceItem, accountID uint, instanceID string, provider string) error {
+	if normalizeCMDBSource(resource.Source) != "CloudAPI" {
+		return errCMDBVMActionUnsupportedSource
+	}
+
+	var evidenceCount int64
+	if err := h.DB.Model(&models.ResourceEvidence{}).
+		Where("ci_id = ? AND source = ? AND raw_id = ?", resource.CIID, "CloudAPI", instanceID).
+		Count(&evidenceCount).Error; err != nil {
+		return err
+	}
+	if evidenceCount == 0 {
+		return errCMDBVMActionNotSynced
+	}
+
+	query := h.DB.Model(&models.CloudAsset{}).
+		Where("account_id = ? AND resource_id = ? AND type = ?", accountID, instanceID, cloud.ResourceTypeCloudServer)
+	if providers := cloudProviderQueryAliases(provider); len(providers) > 0 {
+		query = query.Where("lower(provider) IN ?", providers)
+	}
+	var assetCount int64
+	if err := query.Count(&assetCount).Error; err != nil {
+		return err
+	}
+	if assetCount == 0 {
+		return errCMDBVMActionAssetMismatch
+	}
+	return nil
+}
+
+func cloudProviderQueryAliases(provider string) []string {
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	switch normalized {
+	case "":
+		return nil
+	case "tencent", "tencentcloud":
+		return []string{"tencent", "tencentcloud"}
+	default:
+		return []string{normalized}
+	}
+}
+
+func (h *Handler) executeVMAction(provider string, cred cloud.Credentials, region string, instanceID string, action string) error {
 	switch provider {
 	case "aliyun":
-		return h.executeAliyunVMAction(account, region, instanceID, action)
+		return h.executeAliyunVMAction(cred, region, instanceID, action)
 	case "tencent", "tencentcloud":
-		return h.executeTencentVMAction(account, region, instanceID, action)
+		return h.executeTencentVMAction(cred, region, instanceID, action)
 	default:
 		return fmt.Errorf("provider=%s does not support VM action yet", provider)
 	}
 }
 
-func (h *Handler) executeAliyunVMAction(account models.CloudAccount, region string, instanceID string, action string) error {
+func (h *Handler) executeAliyunVMAction(cred cloud.Credentials, region string, instanceID string, action string) error {
 	client, err := aliyunECS.NewClientWithOptions(
 		region,
 		sdk.NewConfig().WithScheme("HTTPS").WithTimeout(time.Duration(maxInt(h.Config.AliyunSDKTimeoutSeconds, 10))*time.Second),
-		credentials.NewAccessKeyCredential(strings.TrimSpace(account.AccessKey), strings.TrimSpace(account.SecretKey)),
+		credentials.NewAccessKeyCredential(strings.TrimSpace(cred.AccessKey), strings.TrimSpace(cred.SecretKey)),
 	)
 	if err != nil {
 		return fmt.Errorf("init aliyun ecs client failed: %w", err)
@@ -164,8 +230,8 @@ func (h *Handler) executeAliyunVMAction(account models.CloudAccount, region stri
 	return nil
 }
 
-func (h *Handler) executeTencentVMAction(account models.CloudAccount, region string, instanceID string, action string) error {
-	credential := tencentCommon.NewCredential(strings.TrimSpace(account.AccessKey), strings.TrimSpace(account.SecretKey))
+func (h *Handler) executeTencentVMAction(cred cloud.Credentials, region string, instanceID string, action string) error {
+	credential := tencentCommon.NewCredential(strings.TrimSpace(cred.AccessKey), strings.TrimSpace(cred.SecretKey))
 	clientProfile := tencentProfile.NewClientProfile()
 	clientProfile.HttpProfile.ReqTimeout = maxInt(h.Config.TencentSDKTimeoutSeconds, 10)
 	client, err := tencentCVM.NewClient(credential, region, clientProfile)

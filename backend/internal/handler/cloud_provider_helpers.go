@@ -14,6 +14,7 @@ import (
 var (
 	errCloudProviderEmpty       = errors.New("provider cannot be empty")
 	errCloudProviderUnsupported = errors.New("unsupported cloud provider")
+	errCloudAccountNil          = errors.New("cloud account is nil")
 )
 
 func normalizeCloudProvider(provider string) string {
@@ -48,6 +49,20 @@ func (h *Handler) cloudProviderByName(providerName string) (cloud.Provider, stri
 func (h *Handler) cloudProviderByAccount(account models.CloudAccount) (cloud.Provider, error) {
 	provider, _, err := h.cloudProviderByName(account.Provider)
 	return provider, err
+}
+
+func (h *Handler) cloudAccountCredentials(account *models.CloudAccount) (cloud.Credentials, error) {
+	if account == nil {
+		return cloud.Credentials{}, errCloudAccountNil
+	}
+	cred, err := h.cloudCredentials(*account)
+	if err != nil {
+		return cloud.Credentials{}, err
+	}
+	if err := h.migrateCloudCredentialsIfPlain(account, cred); err != nil {
+		return cloud.Credentials{}, err
+	}
+	return cred, nil
 }
 
 func cloudProviderResolveAppError(err error) appErr.AppError {
