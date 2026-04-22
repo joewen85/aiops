@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,7 +12,6 @@ import (
 	"gorm.io/gorm"
 
 	"devops-system/backend/internal/ai"
-	"devops-system/backend/internal/cloud"
 	appErr "devops-system/backend/internal/errors"
 	"devops-system/backend/internal/models"
 	"devops-system/backend/internal/pagination"
@@ -39,7 +37,7 @@ func (h *Handler) ListCloudAccounts(c *gin.Context) {
 		query = query.Where("is_verified = ?", verified)
 	}
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
-		query = query.Where("name LIKE ? OR access_key LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		query = query.Where("name LIKE ?", "%"+keyword+"%")
 	}
 
 	var (
@@ -90,13 +88,9 @@ func (h *Handler) CreateCloudAccount(c *gin.Context) {
 		return
 	}
 
-	provider := normalizeCloudProvider(req.Provider)
-	if provider == "" {
-		response.Error(c, http.StatusBadRequest, appErr.New(3001, "provider cannot be empty"))
-		return
-	}
-	if _, exists := h.CloudProviders[provider]; !exists {
-		response.Error(c, http.StatusBadRequest, appErr.New(4003, "unsupported cloud provider"))
+	_, provider, providerErr := h.cloudProviderByName(req.Provider)
+	if providerErr != nil {
+		response.Error(c, http.StatusBadRequest, cloudProviderResolveAppError(providerErr))
 		return
 	}
 	name := strings.TrimSpace(req.Name)
@@ -114,12 +108,22 @@ func (h *Handler) CreateCloudAccount(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, appErr.New(3001, err.Error()))
 		return
 	}
+	encryptedAccessKey, encryptErr := h.encryptCloudCredential(accessKey)
+	if encryptErr != nil {
+		response.Internal(c, encryptErr)
+		return
+	}
+	encryptedSecretKey, encryptErr := h.encryptCloudCredential(secretKey)
+	if encryptErr != nil {
+		response.Internal(c, encryptErr)
+		return
+	}
 
 	account := models.CloudAccount{
 		Provider:   provider,
 		Name:       name,
-		AccessKey:  accessKey,
-		SecretKey:  secretKey,
+		AccessKey:  encryptedAccessKey,
+		SecretKey:  encryptedSecretKey,
 		Region:     defaultString(strings.TrimSpace(req.Region), "global"),
 		IsVerified: false,
 	}
@@ -159,18 +163,23 @@ func (h *Handler) UpdateCloudAccount(c *gin.Context) {
 	updates := map[string]interface{}{}
 	credentialChanged := false
 	targetProvider := account.Provider
-	nextAccessKey := strings.TrimSpace(account.AccessKey)
-	nextSecretKey := strings.TrimSpace(account.SecretKey)
+	currentCred, credErr := h.cloudCredentials(account)
+	if credErr != nil {
+		response.Internal(c, credErr)
+		return
+	}
+	if migrateErr := h.migrateCloudCredentialsIfPlain(&account, currentCred); migrateErr != nil {
+		response.Internal(c, migrateErr)
+		return
+	}
+	nextAccessKey := strings.TrimSpace(currentCred.AccessKey)
+	nextSecretKey := strings.TrimSpace(currentCred.SecretKey)
 	providerChanged := false
 
 	if req.Provider != nil {
-		provider := normalizeCloudProvider(*req.Provider)
-		if provider == "" {
-			response.Error(c, http.StatusBadRequest, appErr.New(3001, "provider cannot be empty"))
-			return
-		}
-		if _, exists := h.CloudProviders[provider]; !exists {
-			response.Error(c, http.StatusBadRequest, appErr.New(4003, "unsupported cloud provider"))
+		_, provider, providerErr := h.cloudProviderByName(*req.Provider)
+		if providerErr != nil {
+			response.Error(c, http.StatusBadRequest, cloudProviderResolveAppError(providerErr))
 			return
 		}
 		if provider != account.Provider {
@@ -197,16 +206,26 @@ func (h *Handler) UpdateCloudAccount(c *gin.Context) {
 	}
 	if req.AccessKey != nil {
 		accessKey := strings.TrimSpace(*req.AccessKey)
-		if accessKey != "" && accessKey != account.AccessKey {
-			updates["access_key"] = accessKey
+		if accessKey != "" && accessKey != nextAccessKey {
+			encryptedAccessKey, encryptErr := h.encryptCloudCredential(accessKey)
+			if encryptErr != nil {
+				response.Internal(c, encryptErr)
+				return
+			}
+			updates["access_key"] = encryptedAccessKey
 			credentialChanged = true
 			nextAccessKey = accessKey
 		}
 	}
 	if req.SecretKey != nil {
 		secretKey := strings.TrimSpace(*req.SecretKey)
-		if secretKey != "" && secretKey != account.SecretKey {
-			updates["secret_key"] = secretKey
+		if secretKey != "" && secretKey != nextSecretKey {
+			encryptedSecretKey, encryptErr := h.encryptCloudCredential(secretKey)
+			if encryptErr != nil {
+				response.Internal(c, encryptErr)
+				return
+			}
+			updates["secret_key"] = encryptedSecretKey
 			credentialChanged = true
 			nextSecretKey = secretKey
 		}
@@ -252,13 +271,22 @@ func (h *Handler) VerifyCloudAccount(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
-	provider, exists := h.CloudProviders[account.Provider]
-	if !exists {
-		response.Error(c, http.StatusBadRequest, appErr.New(4003, "unsupported cloud provider"))
+	provider, providerErr := h.cloudProviderByAccount(account)
+	if providerErr != nil {
+		response.Error(c, http.StatusBadRequest, cloudProviderResolveAppError(providerErr))
 		return
 	}
-	if err := provider.Verify(cloudCred(account)); err != nil {
-		response.Error(c, http.StatusBadRequest, appErr.New(4004, err.Error()))
+	cred, credErr := h.cloudCredentials(account)
+	if credErr != nil {
+		response.Internal(c, credErr)
+		return
+	}
+	if migrateErr := h.migrateCloudCredentialsIfPlain(&account, cred); migrateErr != nil {
+		response.Internal(c, migrateErr)
+		return
+	}
+	if err := provider.Verify(cred); err != nil {
+		response.Error(c, http.StatusBadRequest, appErr.New(4004, h.cloudProviderExternalError("cloud account verify failed", err)))
 		return
 	}
 	if err := h.DB.Model(&account).Update("is_verified", true).Error; err != nil {
@@ -283,9 +311,27 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
-	provider, exists := h.CloudProviders[account.Provider]
-	if !exists {
-		response.Error(c, http.StatusBadRequest, appErr.New(4003, "unsupported cloud provider"))
+	provider, providerErr := h.cloudProviderByAccount(account)
+	if providerErr != nil {
+		response.Error(c, http.StatusBadRequest, cloudProviderResolveAppError(providerErr))
+		return
+	}
+	var runningCount int64
+	if err := h.DB.Model(&models.CloudSyncJob{}).Where("account_id = ? AND status = ?", account.ID, "running").Count(&runningCount).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	if runningCount > 0 {
+		response.Error(c, http.StatusConflict, appErr.New(4012, "cloud account sync is already running"))
+		return
+	}
+	cred, credErr := h.cloudCredentials(account)
+	if credErr != nil {
+		response.Internal(c, credErr)
+		return
+	}
+	if migrateErr := h.migrateCloudCredentialsIfPlain(&account, cred); migrateErr != nil {
+		response.Internal(c, migrateErr)
 		return
 	}
 	started := time.Now()
@@ -302,36 +348,39 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 		return
 	}
 
-	assets, err := h.collectCloudProviderAssets(provider, cloudCred(account))
+	assets, err := h.collectCloudProviderAssets(provider, cred)
 	if err != nil {
+		publicMessage := h.cloudProviderExternalError("cloud asset sync failed", err)
 		finished := time.Now()
 		_ = h.DB.Model(&models.CloudSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
 			"status":      "failed",
 			"finished_at": &finished,
 			"summary": datatypes.JSONMap{
-				"error": err.Error(),
+				"error": publicMessage,
 			},
 		}).Error
-		response.Error(c, http.StatusBadRequest, appErr.New(4005, err.Error()))
+		response.Error(c, http.StatusBadRequest, appErr.New(4005, publicMessage))
 		return
 	}
 	cloudAssets, syncSummary, cloudErr := h.syncCloudAssets(account, assets, "CloudAPI")
 	if cloudErr != nil {
+		publicMessage := h.cloudProviderExternalError("cloud asset persistence failed", cloudErr)
 		finished := time.Now()
-		syncSummary["error"] = cloudErr.Error()
+		syncSummary["error"] = publicMessage
 		_ = h.DB.Model(&models.CloudSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
 			"status":      "failed",
 			"finished_at": &finished,
 			"summary":     syncSummary,
 		}).Error
-		response.Internal(c, cloudErr)
+		response.Error(c, http.StatusInternalServerError, appErr.New(5000, publicMessage))
 		return
 	}
 
 	cmdbResources, cmdbErr := h.syncCloudResourcesToCMDB(account, assets)
 	if cmdbErr != nil {
+		publicMessage := h.cloudProviderExternalError("cmdb mapping failed", cmdbErr)
 		finished := time.Now()
-		syncSummary["error"] = cmdbErr.Error()
+		syncSummary["error"] = publicMessage
 		syncSummary["providerAssets"] = len(assets)
 		syncSummary["cloudAssets"] = len(cloudAssets)
 		_ = h.DB.Model(&models.CloudSyncJob{}).Where("id = ?", job.ID).Updates(map[string]interface{}{
@@ -339,7 +388,7 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 			"finished_at": &finished,
 			"summary":     syncSummary,
 		}).Error
-		response.Internal(c, cmdbErr)
+		response.Error(c, http.StatusInternalServerError, appErr.New(5000, publicMessage))
 		return
 	}
 	finished := time.Now()
@@ -374,23 +423,6 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 		payload["cmdbAssetItems"] = asCloudAssetSlice(cmdbResources)
 	}
 	response.Success(c, payload)
-}
-
-func normalizeCloudProvider(provider string) string {
-	return strings.ToLower(strings.TrimSpace(provider))
-}
-
-func validateCloudCredentialInput(provider string, accessKey string, secretKey string) error {
-	normalizedProvider := normalizeCloudProvider(provider)
-	ak := strings.TrimSpace(accessKey)
-	sk := strings.TrimSpace(secretKey)
-	if strings.Contains(ak, "*") || strings.Contains(sk, "*") {
-		return fmt.Errorf("credential looks masked, please input original accessKey/secretKey")
-	}
-	if normalizedProvider == "tencent" && ak != "" && !strings.HasPrefix(strings.ToUpper(ak), "AKID") {
-		return fmt.Errorf("tencent accessKey should be SecretId (normally starts with AKID)")
-	}
-	return nil
 }
 
 func shouldValidateAccountCredential(req struct {
@@ -795,12 +827,4 @@ func (h *Handler) AIOpsExecuteProcurementPlan(c *gin.Context) {
 		"protocolVersion": ai.ProcurementProtocolVersion,
 		"result":          result,
 	})
-}
-
-func cloudCred(account models.CloudAccount) cloud.Credentials {
-	return cloud.Credentials{
-		AccessKey: account.AccessKey,
-		SecretKey: account.SecretKey,
-		Region:    account.Region,
-	}
 }

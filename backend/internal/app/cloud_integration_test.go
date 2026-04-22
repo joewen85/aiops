@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"devops-system/backend/internal/models"
+	"gorm.io/datatypes"
 )
 
 func TestCloudAssetCRUDIntegration(t *testing.T) {
@@ -196,7 +198,7 @@ func TestCloudAccountListFilterIntegration(t *testing.T) {
 	assertTotal(tailPath("/api/v1/cloud/accounts", "provider=aws&page=1&pageSize=50"), 2)
 	assertTotal(tailPath("/api/v1/cloud/accounts", "region=ap-southeast-1&page=1&pageSize=50"), 1)
 	assertTotal(tailPath("/api/v1/cloud/accounts", "keyword=prod&page=1&pageSize=50"), 1)
-	assertTotal(tailPath("/api/v1/cloud/accounts", "keyword=ak-dev&page=1&pageSize=50"), 1)
+	assertTotal(tailPath("/api/v1/cloud/accounts", "keyword=ali-dev&page=1&pageSize=50"), 1)
 	assertTotal(tailPath("/api/v1/cloud/accounts", "verified=true&page=1&pageSize=50"), 1)
 	assertTotal(tailPath("/api/v1/cloud/accounts", "verified=false&page=1&pageSize=50"), 2)
 	assertTotal(tailPath("/api/v1/cloud/accounts", "provider=aws&verified=true&page=1&pageSize=50"), 1)
@@ -219,6 +221,49 @@ func TestCloudAccountListFilterIntegration(t *testing.T) {
 	}
 	if len(accountFilterPage.List) != 1 || accountFilterPage.List[0].ID != accountA.ID {
 		t.Fatalf("expected matched account id=%d got=%+v", accountA.ID, accountFilterPage.List)
+	}
+}
+
+func TestCloudAccountSyncRunningConflictIntegration(t *testing.T) {
+	router, database, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	createRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/cloud/accounts", adminToken, map[string]any{
+		"provider":  "aws",
+		"name":      "aws-sync-lock",
+		"accessKey": "ak",
+		"secretKey": "sk",
+		"region":    "ap-southeast-1",
+	})
+	createResp := assertOKResponse(t, createRec)
+	var account models.CloudAccount
+	if err := json.Unmarshal(createResp.Data, &account); err != nil {
+		t.Fatalf("unmarshal cloud account failed: %v", err)
+	}
+	started := time.Now()
+	if err := database.Create(&models.CloudSyncJob{
+		AccountID: account.ID,
+		Provider:  account.Provider,
+		Region:    account.Region,
+		Status:    "running",
+		StartedAt: &started,
+		Summary:   datatypes.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("create running cloud sync job failed: %v", err)
+	}
+
+	syncRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cloud/accounts/%d/sync", account.ID), adminToken, nil)
+	if syncRec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for running sync conflict, got=%d body=%s", syncRec.Code, syncRec.Body.String())
+	}
+	var conflictResp struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(syncRec.Body.Bytes(), &conflictResp); err != nil {
+		t.Fatalf("unmarshal conflict response failed: %v", err)
+	}
+	if conflictResp.Code != 4012 {
+		t.Fatalf("expected code=4012 got=%d", conflictResp.Code)
 	}
 }
 
@@ -329,6 +374,37 @@ func TestCloudAccountTencentUpdateFromLegacyInvalidCredentialIntegration(t *test
 	if updated.ID != legacy.ID {
 		t.Fatalf("expected updated account id=%d got=%d", legacy.ID, updated.ID)
 	}
+}
+
+func TestCloudProviderErrorMessageSanitizedIntegration(t *testing.T) {
+	router, database, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	createRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/cloud/accounts", adminToken, map[string]any{
+		"provider":  "aws",
+		"name":      "aws-error-sanitized",
+		"accessKey": "ak",
+		"secretKey": "sk",
+		"region":    "ap-southeast-1",
+	})
+	createResp := assertOKResponse(t, createRec)
+	var account models.CloudAccount
+	if err := json.Unmarshal(createResp.Data, &account); err != nil {
+		t.Fatalf("unmarshal cloud account failed: %v", err)
+	}
+
+	if err := database.Model(&models.CloudAccount{}).Where("id = ?", account.ID).Updates(map[string]any{
+		"access_key": "",
+		"secret_key": "",
+	}).Error; err != nil {
+		t.Fatalf("patch cloud account credential failed: %v", err)
+	}
+
+	verifyRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cloud/accounts/%d/verify", account.ID), adminToken, nil)
+	assertErrorResponse(t, verifyRec, http.StatusBadRequest, 4004, "cloud account verify failed")
+
+	syncRec := sendJSONRequest(t, router, http.MethodPost, fmt.Sprintf("/api/v1/cloud/accounts/%d/sync", account.ID), adminToken, nil)
+	assertErrorResponse(t, syncRec, http.StatusBadRequest, 4005, "cloud asset sync failed")
 }
 
 func tailPath(path, query string) string {

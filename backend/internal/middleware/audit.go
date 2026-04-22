@@ -22,6 +22,7 @@ var sensitiveAuditKeys = map[string]struct{}{
 	"refreshtoken":  {},
 	"authorization": {},
 	"cookie":        {},
+	"accesskey":     {},
 	"secret":        {},
 	"apikey":        {},
 	"secretkey":     {},
@@ -148,5 +149,5 @@ func isSensitiveAuditKey(key string) bool {
 	if _, ok := sensitiveAuditKeys[normalized]; ok {
 		return true
 	}
-	return strings.Contains(normalized, "password") || strings.Contains(normalized, "secret")
+	return strings.Contains(normalized, "password") || strings.Contains(normalized, "secret") || strings.Contains(normalized, "accesskey")
 }

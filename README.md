@@ -47,9 +47,9 @@
 
 - `VITE_WS_DEBUG`：WebSocket 调试日志开关（`true/1/on` 开启，默认 `false`）
 
-## 多云同步参数（阿里云 / 腾讯云 / 华为云 SDK）
+## 多云同步参数（AWS / 阿里云 / 腾讯云 / 华为云 SDK）
 
-为支持“真实对接阿里云/腾讯云/华为云 SDK 同步资产”，后端新增以下环境变量（见 `backend/.env.example`）：
+为支持“真实对接 AWS/阿里云/腾讯云/华为云 SDK 同步资产”，后端新增以下环境变量（见 `backend/.env.example`）：
 
 - 腾讯云账号字段约定
   - `accessKey` 对应腾讯云 `SecretId`（通常以 `AKID` 开头）
@@ -67,6 +67,20 @@
   - 用途：当账号 `SecretKey` 以前缀开头时，走模拟数据。
   - 默认：`mock_`
   - 示例：`mock_test_sk_xxx`
+- `CLOUD_CREDENTIAL_ENCRYPT_KEY`
+  - 用途：云账号 `accessKey/secretKey` 的落库加密种子（AES-GCM）。
+  - 默认：空（优先回退 `JWT_SECRET`；若两者都为空仅在非生产环境使用内置开发种子）。
+  - 建议：生产环境必须配置高强度随机值，并定期轮换。
+- `AWS_DEFAULT_REGION`
+  - 用途：AWS 账号未填写地域时使用的默认地域。
+  - 默认：`us-east-1`
+  - 示例：`ap-southeast-1`
+- `AWS_SDK_TIMEOUT_SECONDS`
+  - 用途：AWS SDK 单次请求超时时间（秒）。
+  - 默认：`10`
+- `AWS_SDK_PAGE_LIMIT`
+  - 用途：AWS 分页接口每次拉取条数（上限 1000，建议 100）。
+  - 默认：`100`
 - `ALIYUN_DEFAULT_REGION`
   - 用途：阿里云账号未填写地域时使用的默认地域。
   - 默认：`cn-hangzhou`
@@ -110,6 +124,8 @@
 - 生产环境
   - `CLOUD_SDK_MOCK_ENABLED=false`
   - `CLOUD_SDK_MOCK_AK_PREFIX` / `CLOUD_SDK_MOCK_SK_PREFIX` 可改为内部专用前缀或留空（避免误触发模拟）。
+  - `APP_ENV=production` 时后端会自动禁用前缀 mock 触发（即使配置了 `CLOUD_SDK_MOCK_AK_PREFIX` / `CLOUD_SDK_MOCK_SK_PREFIX` 也不生效）。
+  - 必配 `CLOUD_CREDENTIAL_ENCRYPT_KEY`（或保证 `JWT_SECRET` 为强随机密钥），避免云凭据明文存储。
 
 ## 安全基线与可信能力（RBAC/ABAC）
 

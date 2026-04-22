@@ -34,18 +34,22 @@ type Config struct {
 	AnthropicEndpoint string
 	AnthropicAPIKey   string
 
-	CloudSDKMockEnabled      bool
-	CloudSDKMockAKPrefix     string
-	CloudSDKMockSKPrefix     string
-	AliyunDefaultRegion      string
-	AliyunSDKTimeoutSeconds  int
-	AliyunSDKPageLimit       int
-	TencentDefaultRegion     string
-	TencentSDKTimeoutSeconds int
-	TencentSDKPageLimit      int
-	HuaweiDefaultRegion      string
-	HuaweiSDKTimeoutSeconds  int
-	HuaweiSDKPageLimit       int
+	CloudSDKMockEnabled       bool
+	CloudSDKMockAKPrefix      string
+	CloudSDKMockSKPrefix      string
+	CloudCredentialEncryptKey string
+	AWSDefaultRegion          string
+	AWSSDKTimeoutSeconds      int
+	AWSSDKPageLimit           int
+	AliyunDefaultRegion       string
+	AliyunSDKTimeoutSeconds   int
+	AliyunSDKPageLimit        int
+	TencentDefaultRegion      string
+	TencentSDKTimeoutSeconds  int
+	TencentSDKPageLimit       int
+	HuaweiDefaultRegion       string
+	HuaweiSDKTimeoutSeconds   int
+	HuaweiSDKPageLimit        int
 }
 
 var loadEnvOnce sync.Once
@@ -77,6 +81,10 @@ func Load() Config {
 		CloudSDKMockEnabled:         envBool("CLOUD_SDK_MOCK_ENABLED", false),
 		CloudSDKMockAKPrefix:        env("CLOUD_SDK_MOCK_AK_PREFIX", "mock_"),
 		CloudSDKMockSKPrefix:        env("CLOUD_SDK_MOCK_SK_PREFIX", "mock_"),
+		CloudCredentialEncryptKey:   env("CLOUD_CREDENTIAL_ENCRYPT_KEY", ""),
+		AWSDefaultRegion:            env("AWS_DEFAULT_REGION", "us-east-1"),
+		AWSSDKTimeoutSeconds:        envInt("AWS_SDK_TIMEOUT_SECONDS", 10),
+		AWSSDKPageLimit:             envInt("AWS_SDK_PAGE_LIMIT", 100),
 		AliyunDefaultRegion:         env("ALIYUN_DEFAULT_REGION", "cn-hangzhou"),
 		AliyunSDKTimeoutSeconds:     envInt("ALIYUN_SDK_TIMEOUT_SECONDS", 10),
 		AliyunSDKPageLimit:          envInt("ALIYUN_SDK_PAGE_LIMIT", 100),

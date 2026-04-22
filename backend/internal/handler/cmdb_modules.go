@@ -924,14 +924,19 @@ func (h *Handler) collectCloudCandidates() ([]cmdbResourceCandidate, []string) {
 	candidates := make([]cmdbResourceCandidate, 0)
 	warnings := make([]string, 0)
 	for _, account := range accounts {
-		provider, exists := h.CloudProviders[account.Provider]
-		if !exists {
-			warnings = append(warnings, "unsupported cloud provider: "+account.Provider)
+		provider, providerErr := h.cloudProviderByAccount(account)
+		if providerErr != nil {
+			warnings = append(warnings, h.cloudProviderExternalWarning(fmt.Sprintf("cloud account %d provider error", account.ID), providerErr))
 			continue
 		}
-		assets, err := h.collectCloudProviderAssets(provider, cloudCred(account))
+		cred, credErr := h.cloudCredentials(account)
+		if credErr != nil {
+			warnings = append(warnings, h.cloudProviderExternalWarning(fmt.Sprintf("cloud account %d credential error", account.ID), credErr))
+			continue
+		}
+		assets, err := h.collectCloudProviderAssets(provider, cred)
 		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("cloud account %d sync failed: %s", account.ID, err.Error()))
+			warnings = append(warnings, h.cloudProviderExternalWarning(fmt.Sprintf("cloud account %d sync failed", account.ID), err))
 			continue
 		}
 		for _, asset := range assets {
