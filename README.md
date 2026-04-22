@@ -47,9 +47,9 @@
 
 - `VITE_WS_DEBUG`：WebSocket 调试日志开关（`true/1/on` 开启，默认 `false`）
 
-## 多云同步参数（腾讯云 SDK）
+## 多云同步参数（阿里云 / 腾讯云 / 华为云 SDK）
 
-为支持“真实对接腾讯云 SDK 同步资产”，后端新增以下环境变量（见 `backend/.env.example`）：
+为支持“真实对接阿里云/腾讯云/华为云 SDK 同步资产”，后端新增以下环境变量（见 `backend/.env.example`）：
 
 - 腾讯云账号字段约定
   - `accessKey` 对应腾讯云 `SecretId`（通常以 `AKID` 开头）
@@ -89,6 +89,16 @@
   - 用途：腾讯云分页接口每次拉取条数（上限 100）。
   - 默认：`100`
   - 建议：一般保持默认。
+- `HUAWEI_DEFAULT_REGION`
+  - 用途：华为云账号未填写地域时使用的默认地域。
+  - 默认：`cn-north-4`
+  - 示例：`cn-south-1`
+- `HUAWEI_SDK_TIMEOUT_SECONDS`
+  - 用途：华为云 SDK 单次请求超时时间（秒）。
+  - 默认：`10`
+- `HUAWEI_SDK_PAGE_LIMIT`
+  - 用途：华为云分页接口每次拉取条数（上限 1000，建议 100）。
+  - 默认：`100`
 
 推荐配置：
 

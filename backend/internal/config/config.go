@@ -43,6 +43,9 @@ type Config struct {
 	TencentDefaultRegion     string
 	TencentSDKTimeoutSeconds int
 	TencentSDKPageLimit      int
+	HuaweiDefaultRegion      string
+	HuaweiSDKTimeoutSeconds  int
+	HuaweiSDKPageLimit       int
 }
 
 var loadEnvOnce sync.Once
@@ -80,6 +83,9 @@ func Load() Config {
 		TencentDefaultRegion:        env("TENCENT_DEFAULT_REGION", "ap-guangzhou"),
 		TencentSDKTimeoutSeconds:    envInt("TENCENT_SDK_TIMEOUT_SECONDS", 10),
 		TencentSDKPageLimit:         envInt("TENCENT_SDK_PAGE_LIMIT", 100),
+		HuaweiDefaultRegion:         env("HUAWEI_DEFAULT_REGION", "cn-north-4"),
+		HuaweiSDKTimeoutSeconds:     envInt("HUAWEI_SDK_TIMEOUT_SECONDS", 10),
+		HuaweiSDKPageLimit:          envInt("HUAWEI_SDK_PAGE_LIMIT", 100),
 	}
 }
 

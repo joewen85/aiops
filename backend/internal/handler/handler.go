@@ -67,7 +67,14 @@ func New(
 				RequestTimeoutS: cfg.TencentSDKTimeoutSeconds,
 				PageLimit:       cfg.TencentSDKPageLimit,
 			}),
-			"huawei": cloud.NewStubProvider("huawei"),
+			"huawei": cloud.NewHuaweiProvider(cloud.HuaweiProviderOptions{
+				MockEnabled:     cfg.CloudSDKMockEnabled,
+				MockAKPrefix:    cfg.CloudSDKMockAKPrefix,
+				MockSKPrefix:    cfg.CloudSDKMockSKPrefix,
+				DefaultRegion:   cfg.HuaweiDefaultRegion,
+				RequestTimeoutS: cfg.HuaweiSDKTimeoutSeconds,
+				PageLimit:       cfg.HuaweiSDKPageLimit,
+			}),
 		},
 		CloudCollector: cloud.NewDefaultResourceCollector(),
 		ModelProviders: map[string]ai.ModelProvider{
