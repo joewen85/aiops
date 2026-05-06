@@ -224,11 +224,20 @@ type Event struct {
 
 type InAppMessage struct {
 	BaseModel
-	Channel string `gorm:"size:64;index;not null" json:"channel"`
-	Target  string `gorm:"size:128;index;not null" json:"target"`
-	Title   string `gorm:"size:255" json:"title"`
-	Content string `gorm:"type:text;not null" json:"content"`
-	Read    bool   `gorm:"default:false" json:"read"`
+	TraceID string            `gorm:"size:64;index" json:"traceId"`
+	Channel string            `gorm:"size:64;index;not null" json:"channel"`
+	Target  string            `gorm:"size:128;index;not null" json:"target"`
+	Title   string            `gorm:"size:255" json:"title"`
+	Content string            `gorm:"type:text;not null" json:"content"`
+	Data    datatypes.JSONMap `gorm:"type:jsonb" json:"data"`
+	Read    bool              `gorm:"default:false" json:"read"`
+}
+
+type MessageReadReceipt struct {
+	BaseModel
+	MessageID uint      `gorm:"uniqueIndex:idx_message_read_user;index;not null" json:"messageId"`
+	UserID    uint      `gorm:"uniqueIndex:idx_message_read_user;index;not null" json:"userId"`
+	ReadAt    time.Time `gorm:"index;not null" json:"readAt"`
 }
 
 type ToolItem struct {
@@ -331,6 +340,7 @@ func AutoMigrateModels() []interface{} {
 		&Ticket{},
 		&Event{},
 		&InAppMessage{},
+		&MessageReadReceipt{},
 		&ToolItem{},
 		&DockerHost{},
 		&DockerComposeStack{},

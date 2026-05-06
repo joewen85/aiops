@@ -4,19 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 )
 
 type Message struct {
+	TraceID string      `json:"traceId"`
 	Channel string      `json:"channel"`
 	Target  string      `json:"target"`
 	Title   string      `json:"title"`
 	Content string      `json:"content"`
 	Data    interface{} `json:"data,omitempty"`
+}
+
+type redisEnvelope struct {
+	Origin  string  `json:"origin"`
+	Message Message `json:"message"`
 }
 
 type Client struct {
@@ -32,6 +40,7 @@ type Hub struct {
 	clients map[*Client]struct{}
 	redis   *redis.Client
 	topic   string
+	nodeID  string
 }
 
 func NewHub(redisClient *redis.Client, topic string) *Hub {
@@ -39,6 +48,7 @@ func NewHub(redisClient *redis.Client, topic string) *Hub {
 		clients: make(map[*Client]struct{}),
 		redis:   redisClient,
 		topic:   topic,
+		nodeID:  buildNodeID(),
 	}
 	if redisClient != nil {
 		go h.consumeRedis()
@@ -61,11 +71,17 @@ func (h *Hub) Unregister(c *Client) {
 }
 
 func (h *Hub) Publish(msg Message) {
+	if msg.TraceID == "" {
+		msg.TraceID = uuid.NewString()
+	}
 	h.broadcast(msg)
 	if h.redis == nil {
 		return
 	}
-	raw, err := json.Marshal(msg)
+	raw, err := json.Marshal(redisEnvelope{
+		Origin:  h.nodeID,
+		Message: msg,
+	})
 	if err != nil {
 		return
 	}
@@ -111,11 +127,28 @@ func (h *Hub) consumeRedis() {
 	defer func() { _ = sub.Close() }()
 	ch := sub.Channel()
 	for msg := range ch {
-		var m Message
-		if err := json.Unmarshal([]byte(msg.Payload), &m); err != nil {
+		var envelope redisEnvelope
+		if err := json.Unmarshal([]byte(msg.Payload), &envelope); err == nil && envelope.Message.TraceID != "" {
+			if envelope.Origin == h.nodeID {
+				continue
+			}
+			h.broadcast(envelope.Message)
+			continue
+		}
+
+		var legacy Message
+		if err := json.Unmarshal([]byte(msg.Payload), &legacy); err != nil {
 			log.Printf("ws redis unmarshal error: %v", err)
 			continue
 		}
-		h.broadcast(m)
+		h.broadcast(legacy)
 	}
+}
+
+func buildNodeID() string {
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "node"
+	}
+	return hostname + "-" + uuid.NewString()
 }

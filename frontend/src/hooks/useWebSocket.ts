@@ -18,7 +18,9 @@ let sharedSocketUrl = "";
 let sharedConnectTimer: number | null = null;
 let subscriberCount = 0;
 let manualClosing = false;
+let reconnectAttempt = 0;
 const wsDebugEnabled = parseDebugFlag(import.meta.env.VITE_WS_DEBUG);
+const maxReconnectDelayMs = 15000;
 
 function parseDebugFlag(raw: unknown): boolean {
   const value = String(raw ?? "").trim().toLowerCase();
@@ -47,9 +49,29 @@ function closeSharedSocket() {
   if (!sharedSocket) return;
   wsDebugLog("close shared socket");
   manualClosing = true;
+  reconnectAttempt = 0;
   sharedSocket.close();
   sharedSocket = null;
   sharedSocketUrl = "";
+}
+
+function reconnectDelay() {
+  const delay = Math.min(1000 * 2 ** reconnectAttempt, maxReconnectDelayMs);
+  reconnectAttempt += 1;
+  return delay;
+}
+
+function scheduleSharedSocket(url: string, delayMs: number) {
+  if (sharedConnectTimer !== null) return;
+  wsDebugLog("schedule shared socket connect", { subscriberCount, delayMs });
+  sharedConnectTimer = window.setTimeout(() => {
+    sharedConnectTimer = null;
+    if (subscriberCount <= 0 || sharedSocket) {
+      wsDebugLog("skip connect due to no subscribers or existing socket", { subscriberCount, hasSocket: Boolean(sharedSocket) });
+      return;
+    }
+    openSharedSocket(url);
+  }, delayMs);
 }
 
 function ensureSharedSocket(url: string) {
@@ -65,65 +87,61 @@ function ensureSharedSocket(url: string) {
     return;
   }
 
-  wsDebugLog("schedule shared socket connect", { subscriberCount });
-  sharedConnectTimer = window.setTimeout(() => {
-    sharedConnectTimer = null;
-    if (subscriberCount <= 0 || sharedSocket) {
-      wsDebugLog("skip connect due to no subscribers or existing socket", { subscriberCount, hasSocket: Boolean(sharedSocket) });
-      return;
-    }
+  scheduleSharedSocket(url, 0);
+}
 
-    const ws = new WebSocket(url);
-    sharedSocket = ws;
-    sharedSocketUrl = url;
-    wsDebugLog("create websocket", { url });
+function openSharedSocket(url: string) {
+  const ws = new WebSocket(url);
+  sharedSocket = ws;
+  sharedSocketUrl = url;
+  wsDebugLog("create websocket", { url });
 
-    ws.onopen = () => {
-      wsDebugLog("socket open", { url: sharedSocketUrl });
-    };
+  ws.onopen = () => {
+    reconnectAttempt = 0;
+    wsDebugLog("socket open", { url: sharedSocketUrl });
+  };
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as WsMessage;
-        wsDebugLog("socket message", {
-          channel: msg.channel,
-          target: msg.target,
-          title: msg.title,
-        });
-        emitMessage(msg);
-        if (msg.title || msg.content) {
-          showToast(`${msg.title ?? "消息"}: ${msg.content ?? ""}`);
-        }
-      } catch {
-        wsDebugLog("socket message parse failed");
-        showToast("收到无法解析的实时消息");
-      }
-    };
-
-    ws.onerror = () => {
-      wsDebugLog("socket error");
-      showToast("实时通道连接异常");
-    };
-
-    ws.onclose = (event) => {
-      const closedByManual = manualClosing;
-      manualClosing = false;
-      if (sharedSocket === ws) {
-        sharedSocket = null;
-        sharedSocketUrl = "";
-      }
-      wsDebugLog("socket close", {
-        code: event.code,
-        reason: event.reason,
-        wasClean: event.wasClean,
-        closedByManual,
-        subscriberCount,
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data) as WsMessage;
+      wsDebugLog("socket message", {
+        channel: msg.channel,
+        target: msg.target,
+        title: msg.title,
       });
-      if (!closedByManual && subscriberCount > 0) {
-        showToast("实时通道已断开");
+      emitMessage(msg);
+      if (msg.title || msg.content) {
+        showToast(`${msg.title ?? "消息"}: ${msg.content ?? ""}`);
       }
-    };
-  }, 0);
+    } catch {
+      wsDebugLog("socket message parse failed");
+      showToast("收到无法解析的实时消息");
+    }
+  };
+
+  ws.onerror = () => {
+    wsDebugLog("socket error");
+  };
+
+  ws.onclose = (event) => {
+    const closedByManual = manualClosing;
+    manualClosing = false;
+    if (sharedSocket === ws) {
+      sharedSocket = null;
+      sharedSocketUrl = "";
+    }
+    wsDebugLog("socket close", {
+      code: event.code,
+      reason: event.reason,
+      wasClean: event.wasClean,
+      closedByManual,
+      subscriberCount,
+    });
+    if (!closedByManual && subscriberCount > 0) {
+      showToast("实时通道已断开，正在重连");
+      scheduleSharedSocket(url, reconnectDelay());
+    }
+  };
 }
 
 export function useWebSocket(enabled: boolean) {

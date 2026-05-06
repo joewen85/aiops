@@ -8,6 +8,7 @@ import { CMDBPage } from "@/pages/CMDBPage";
 import { CloudPage } from "@/pages/CloudPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { MessagesPage } from "@/pages/MessagesPage";
 import { ModulePage } from "@/pages/ModulePage";
 import { RBACPage } from "@/pages/RBACPage";
 import { UsersPage } from "@/pages/UsersPage";
@@ -31,7 +32,7 @@ export const router = createBrowserRouter([
           { path: "users", element: withMenuGuard("menu.users", <UsersPage />) },
           { path: "cmdb", element: withMenuGuard("menu.cmdb", <CMDBPage />) },
           { path: "tasks", element: withMenuGuard("menu.tasks", <ModulePage />) },
-          { path: "messages", element: withMenuGuard("menu.messages", <ModulePage />) },
+          { path: "messages", element: withMenuGuard("menu.messages", <MessagesPage />) },
           { path: "cloud", element: withMenuGuard("menu.cloud", <CloudPage />) },
           { path: "tickets", element: withMenuGuard("menu.tickets", <ModulePage />) },
           { path: "docker", element: withMenuGuard("menu.docker", <ModulePage />) },
