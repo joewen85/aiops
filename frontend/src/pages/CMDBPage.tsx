@@ -330,12 +330,22 @@ export function CMDBPage() {
     () => resources.map((item) => item.ciId).filter(Boolean),
     [resources],
   );
-  const resourceVisibleColumnSet = useMemo(
-    () => new Set(visibleResourceColumnKeys),
+  const visibleResourceColumns = useMemo(
+    () =>
+      visibleResourceColumnKeys
+        .map((key) =>
+          cmdbResourceTableColumns.find((column) => column.key === key),
+        )
+        .filter((column): column is TableSettingsColumn => Boolean(column)),
     [visibleResourceColumnKeys],
   );
-  const relationVisibleColumnSet = useMemo(
-    () => new Set(visibleRelationColumnKeys),
+  const visibleRelationColumns = useMemo(
+    () =>
+      visibleRelationColumnKeys
+        .map((key) =>
+          cmdbRelationTableColumns.find((column) => column.key === key),
+        )
+        .filter((column): column is TableSettingsColumn => Boolean(column)),
     [visibleRelationColumnKeys],
   );
   const resourceColSpan = Math.max(1, visibleResourceColumnKeys.length);
@@ -450,6 +460,8 @@ export function CMDBPage() {
   }
 
   function toggleResourceVisibleColumn(columnKey: string) {
+    const column = cmdbResourceTableColumns.find((item) => item.key === columnKey);
+    if (column?.required) return;
     setVisibleResourceColumnKeys((prev) => {
       const exists = prev.includes(columnKey);
       if (exists) return prev.filter((key) => key !== columnKey);
@@ -458,11 +470,25 @@ export function CMDBPage() {
   }
 
   function toggleRelationVisibleColumn(columnKey: string) {
+    const column = cmdbRelationTableColumns.find((item) => item.key === columnKey);
+    if (column?.required) return;
     setVisibleRelationColumnKeys((prev) => {
       const exists = prev.includes(columnKey);
       if (exists) return prev.filter((key) => key !== columnKey);
       return [...prev, columnKey];
     });
+  }
+
+  function moveResourceVisibleColumn(columnKey: string, direction: "up" | "down") {
+    setVisibleResourceColumnKeys((prev) =>
+      moveColumnKey(prev, columnKey, direction),
+    );
+  }
+
+  function moveRelationVisibleColumn(columnKey: string, direction: "up" | "down") {
+    setVisibleRelationColumnKeys((prev) =>
+      moveColumnKey(prev, columnKey, direction),
+    );
   }
 
   async function handleCreateResource(event: FormEvent<HTMLFormElement>) {
@@ -636,6 +662,140 @@ export function CMDBPage() {
     }
   }
 
+  function renderResourceHeader(column: TableSettingsColumn) {
+    if (column.key !== "actions") return column.label;
+    return (
+      <div className="table-actions-header">
+        <span>{column.label}</span>
+        <button
+          className="table-settings-trigger cursor-pointer"
+          type="button"
+          onClick={() => setTableSettingsTarget("resources")}
+          aria-label="CI资源列表设置"
+        >
+          ⚙️
+        </button>
+      </div>
+    );
+  }
+
+  function renderResourceCell(item: CmdbResourceItem, columnKey: string) {
+    switch (columnKey) {
+      case "ciId":
+        return item.ciId || "-";
+      case "type":
+        return item.type || "-";
+      case "name":
+        return item.name || "-";
+      case "baseSpec":
+        return formatResourceBaseSpec(item);
+      case "cloudRegion":
+        return `${item.cloud || "-"}/${item.region || "-"}`;
+      case "env":
+        return item.env || "-";
+      case "owner":
+        return item.owner || "-";
+      case "source":
+        return item.source || "-";
+      case "expiresAt":
+        return formatResourceExpiry(item);
+      case "lastSeenAt":
+        return formatDateTime(item.lastSeenAt);
+      case "actions":
+        return (
+          <div className="rbac-row-actions">
+            <RowActionOverflow
+              title="CI资源更多操作"
+              actions={[
+                {
+                  key: `${item.id}-detail`,
+                  label: "详情",
+                  permissionKey: "button.cmdb.resource.detail",
+                  onClick: () => void openResourceDetailDrawer(item.id),
+                },
+                ...(isVMType(item.type)
+                  ? [
+                      {
+                        key: `${item.id}-restart`,
+                        label:
+                          resourceActionLoadingKey === `${item.id}:restart`
+                            ? "重启中..."
+                            : "重启",
+                        permissionKey: "button.cmdb.resource.restart",
+                        disabled:
+                          resourceActionLoadingKey === `${item.id}:restart`,
+                        onClick: () => void handleVMAction(item, "restart"),
+                      },
+                      {
+                        key: `${item.id}-stop`,
+                        label:
+                          resourceActionLoadingKey === `${item.id}:stop`
+                            ? "停止中..."
+                            : "停止",
+                        permissionKey: "button.cmdb.resource.stop",
+                        disabled:
+                          resourceActionLoadingKey === `${item.id}:stop`,
+                        onClick: () => void handleVMAction(item, "stop"),
+                      },
+                    ]
+                  : []),
+                {
+                  key: `${item.id}-delete`,
+                  label: resourceDeletingId === item.id ? "删除中..." : "删除",
+                  permissionKey: "button.cmdb.resource.delete",
+                  disabled:
+                    resourceDeletingId === item.id || isResourceRunning(item),
+                  onClick: () => requestDeleteResource(item),
+                },
+              ]}
+            />
+          </div>
+        );
+      default:
+        return "-";
+    }
+  }
+
+  function renderRelationHeader(column: TableSettingsColumn) {
+    if (column.key !== "updatedAt") return column.label;
+    return (
+      <div className="table-actions-header">
+        <span>{column.label}</span>
+        <button
+          className="table-settings-trigger cursor-pointer"
+          type="button"
+          onClick={() => setTableSettingsTarget("relations")}
+          aria-label="关系列表设置"
+        >
+          ⚙️
+        </button>
+      </div>
+    );
+  }
+
+  function renderRelationCell(item: CmdbRelationItem, columnKey: string) {
+    switch (columnKey) {
+      case "fromCiId":
+        return item.fromCiId;
+      case "toCiId":
+        return item.toCiId;
+      case "relationType":
+        return item.relationType;
+      case "direction":
+        return item.direction || "-";
+      case "criticality":
+        return item.criticality || "-";
+      case "confidence":
+        return typeof item.confidence === "number"
+          ? item.confidence.toFixed(2)
+          : "-";
+      case "updatedAt":
+        return formatDateTime(item.relationUpdatedAt || item.updatedAt);
+      default:
+        return "-";
+    }
+  }
+
   return (
     <section className="page">
       <h2>CMDB</h2>
@@ -778,43 +938,13 @@ export function CMDBPage() {
 
           <div className="rbac-table-wrapper rbac-module-scroll">
             <table className="rbac-table">
-              <thead>
-                <tr>
-                  {resourceVisibleColumnSet.has("ciId") && <th>CIID</th>}
-                  {resourceVisibleColumnSet.has("type") && <th>类型</th>}
-                  {resourceVisibleColumnSet.has("name") && <th>名称</th>}
-                  {resourceVisibleColumnSet.has("baseSpec") && (
-                    <th>基础配置</th>
-                  )}
-                  {resourceVisibleColumnSet.has("cloudRegion") && (
-                    <th>云/地域</th>
-                  )}
-                  {resourceVisibleColumnSet.has("env") && <th>环境</th>}
-                  {resourceVisibleColumnSet.has("owner") && <th>Owner</th>}
-                  {resourceVisibleColumnSet.has("source") && <th>来源</th>}
-                  {resourceVisibleColumnSet.has("expiresAt") && (
-                    <th>过期时间</th>
-                  )}
-                  {resourceVisibleColumnSet.has("lastSeenAt") && (
-                    <th>最近发现</th>
-                  )}
-                  {resourceVisibleColumnSet.has("actions") && (
-                    <th>
-                      <div className="table-actions-header">
-                        <span>操作</span>
-                        <button
-                          className="table-settings-trigger cursor-pointer"
-                          type="button"
-                          onClick={() => setTableSettingsTarget("resources")}
-                          aria-label="CI资源列表设置"
-                        >
-                          ⚙️
-                        </button>
-                      </div>
-                    </th>
-                  )}
-                </tr>
-              </thead>
+	              <thead>
+	                <tr>
+	                  {visibleResourceColumns.map((column) => (
+	                    <th key={column.key}>{renderResourceHeader(column)}</th>
+	                  ))}
+	                </tr>
+	              </thead>
               <tbody>
                 {resourceLoading ? (
                   <tr>
@@ -825,106 +955,15 @@ export function CMDBPage() {
                     <td colSpan={resourceColSpan}>暂无数据</td>
                   </tr>
                 ) : (
-                  resources.map((item) => (
-                    <tr key={item.id}>
-                      {resourceVisibleColumnSet.has("ciId") && (
-                        <td>{item.ciId || "-"}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("type") && (
-                        <td>{item.type || "-"}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("name") && (
-                        <td>{item.name || "-"}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("baseSpec") && (
-                        <td>{formatResourceBaseSpec(item)}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("cloudRegion") && (
-                        <td>
-                          {item.cloud || "-"}/{item.region || "-"}
-                        </td>
-                      )}
-                      {resourceVisibleColumnSet.has("env") && (
-                        <td>{item.env || "-"}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("owner") && (
-                        <td>{item.owner || "-"}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("source") && (
-                        <td>{item.source || "-"}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("expiresAt") && (
-                        <td>{formatResourceExpiry(item)}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("lastSeenAt") && (
-                        <td>{formatDateTime(item.lastSeenAt)}</td>
-                      )}
-                      {resourceVisibleColumnSet.has("actions") && (
-                        <td>
-                          <div className="rbac-row-actions">
-                            <RowActionOverflow
-                              title="CI资源更多操作"
-                              actions={[
-                                {
-                                  key: `${item.id}-detail`,
-                                  label: "详情",
-                                  permissionKey: "button.cmdb.resource.detail",
-                                  onClick: () =>
-                                    void openResourceDetailDrawer(item.id),
-                                },
-                                ...(isVMType(item.type)
-                                  ? [
-                                      {
-                                        key: `${item.id}-restart`,
-                                        label:
-                                          resourceActionLoadingKey ===
-                                          `${item.id}:restart`
-                                            ? "重启中..."
-                                            : "重启",
-                                        permissionKey:
-                                          "button.cmdb.resource.restart",
-                                        disabled:
-                                          resourceActionLoadingKey ===
-                                          `${item.id}:restart`,
-                                        onClick: () =>
-                                          void handleVMAction(item, "restart"),
-                                      },
-                                      {
-                                        key: `${item.id}-stop`,
-                                        label:
-                                          resourceActionLoadingKey ===
-                                          `${item.id}:stop`
-                                            ? "停止中..."
-                                            : "停止",
-                                        permissionKey:
-                                          "button.cmdb.resource.stop",
-                                        disabled:
-                                          resourceActionLoadingKey ===
-                                          `${item.id}:stop`,
-                                        onClick: () =>
-                                          void handleVMAction(item, "stop"),
-                                      },
-                                    ]
-                                  : []),
-                                {
-                                  key: `${item.id}-delete`,
-                                  label:
-                                    resourceDeletingId === item.id
-                                      ? "删除中..."
-                                      : "删除",
-                                  permissionKey: "button.cmdb.resource.delete",
-                                  disabled:
-                                    resourceDeletingId === item.id ||
-                                    isResourceRunning(item),
-                                  onClick: () => requestDeleteResource(item),
-                                },
-                              ]}
-                            />
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
+	                  resources.map((item) => (
+	                    <tr key={item.id}>
+	                      {visibleResourceColumns.map((column) => (
+	                        <td key={column.key}>
+	                          {renderResourceCell(item, column.key)}
+	                        </td>
+	                      ))}
+	                    </tr>
+	                  ))
                 )}
               </tbody>
             </table>
@@ -1099,35 +1138,13 @@ export function CMDBPage() {
 
           <div className="rbac-table-wrapper rbac-module-scroll">
             <table className="rbac-table">
-              <thead>
-                <tr>
-                  {relationVisibleColumnSet.has("fromCiId") && <th>From</th>}
-                  {relationVisibleColumnSet.has("toCiId") && <th>To</th>}
-                  {relationVisibleColumnSet.has("relationType") && (
-                    <th>关系</th>
-                  )}
-                  {relationVisibleColumnSet.has("direction") && <th>方向</th>}
-                  {relationVisibleColumnSet.has("criticality") && <th>等级</th>}
-                  {relationVisibleColumnSet.has("confidence") && (
-                    <th>置信度</th>
-                  )}
-                  {relationVisibleColumnSet.has("updatedAt") && (
-                    <th>
-                      <div className="table-actions-header">
-                        <span>更新时间</span>
-                        <button
-                          className="table-settings-trigger cursor-pointer"
-                          type="button"
-                          onClick={() => setTableSettingsTarget("relations")}
-                          aria-label="关系列表设置"
-                        >
-                          ⚙️
-                        </button>
-                      </div>
-                    </th>
-                  )}
-                </tr>
-              </thead>
+	              <thead>
+	                <tr>
+	                  {visibleRelationColumns.map((column) => (
+	                    <th key={column.key}>{renderRelationHeader(column)}</th>
+	                  ))}
+	                </tr>
+	              </thead>
               <tbody>
                 {relationLoading ? (
                   <tr>
@@ -1138,39 +1155,15 @@ export function CMDBPage() {
                     <td colSpan={relationColSpan}>暂无数据</td>
                   </tr>
                 ) : (
-                  relations.map((item) => (
-                    <tr key={item.id}>
-                      {relationVisibleColumnSet.has("fromCiId") && (
-                        <td>{item.fromCiId}</td>
-                      )}
-                      {relationVisibleColumnSet.has("toCiId") && (
-                        <td>{item.toCiId}</td>
-                      )}
-                      {relationVisibleColumnSet.has("relationType") && (
-                        <td>{item.relationType}</td>
-                      )}
-                      {relationVisibleColumnSet.has("direction") && (
-                        <td>{item.direction || "-"}</td>
-                      )}
-                      {relationVisibleColumnSet.has("criticality") && (
-                        <td>{item.criticality || "-"}</td>
-                      )}
-                      {relationVisibleColumnSet.has("confidence") && (
-                        <td>
-                          {typeof item.confidence === "number"
-                            ? item.confidence.toFixed(2)
-                            : "-"}
-                        </td>
-                      )}
-                      {relationVisibleColumnSet.has("updatedAt") && (
-                        <td>
-                          {formatDateTime(
-                            item.relationUpdatedAt || item.updatedAt,
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                  ))
+	                  relations.map((item) => (
+	                    <tr key={item.id}>
+	                      {visibleRelationColumns.map((column) => (
+	                        <td key={column.key}>
+	                          {renderRelationCell(item, column.key)}
+	                        </td>
+	                      ))}
+	                    </tr>
+	                  ))
                 )}
               </tbody>
             </table>
@@ -1424,6 +1417,7 @@ export function CMDBPage() {
         columns={cmdbResourceTableColumns}
         visibleColumnKeys={visibleResourceColumnKeys}
         onToggleColumn={toggleResourceVisibleColumn}
+        onMoveColumn={moveResourceVisibleColumn}
         onReset={() =>
           setVisibleResourceColumnKeys(
             sanitizeVisibleColumnKeys(
@@ -1441,6 +1435,7 @@ export function CMDBPage() {
         columns={cmdbRelationTableColumns}
         visibleColumnKeys={visibleRelationColumnKeys}
         onToggleColumn={toggleRelationVisibleColumn}
+        onMoveColumn={moveRelationVisibleColumn}
         onReset={() =>
           setVisibleRelationColumnKeys(
             sanitizeVisibleColumnKeys(
@@ -1816,6 +1811,20 @@ function totalPages(total: number, pageSize: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function moveColumnKey(
+  columns: string[],
+  key: string,
+  direction: "up" | "down",
+): string[] {
+  const index = columns.indexOf(key);
+  if (index < 0) return columns;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= columns.length) return columns;
+  const next = [...columns];
+  [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+  return next;
 }
 
 function formatDateTime(value?: string): string {
