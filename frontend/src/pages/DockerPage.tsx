@@ -201,9 +201,24 @@ export function DockerPage() {
   const hostTotalPages = useMemo(() => totalPages(hosts.total, hostPageSize), [hosts.total, hostPageSize]);
   const resourceTotalPages = useMemo(() => totalPages(resources.total, resourcePageSize), [resources.total, resourcePageSize]);
   const stackTotalPages = useMemo(() => totalPages(stacks.total, stackPageSize), [stacks.total, stackPageSize]);
-  const hostColumnSet = useMemo(() => new Set(visibleHostColumns), [visibleHostColumns]);
-  const resourceColumnSet = useMemo(() => new Set(visibleResourceColumns), [visibleResourceColumns]);
-  const stackColumnSet = useMemo(() => new Set(visibleStackColumns), [visibleStackColumns]);
+  const visibleHostColumnDefs = useMemo(
+    () => visibleHostColumns
+      .map((key) => hostColumns.find((column) => column.key === key))
+      .filter((column): column is TableSettingsColumn => Boolean(column)),
+    [visibleHostColumns],
+  );
+  const visibleResourceColumnDefs = useMemo(
+    () => visibleResourceColumns
+      .map((key) => resourceColumns.find((column) => column.key === key))
+      .filter((column): column is TableSettingsColumn => Boolean(column)),
+    [visibleResourceColumns],
+  );
+  const visibleStackColumnDefs = useMemo(
+    () => visibleStackColumns
+      .map((key) => stackColumns.find((column) => column.key === key))
+      .filter((column): column is TableSettingsColumn => Boolean(column)),
+    [visibleStackColumns],
+  );
 
   useEffect(() => {
     void loadHosts();
@@ -521,6 +536,133 @@ export function DockerPage() {
     setResourceQuery({ ...resourceFilter });
   }
 
+  function renderActionsHeader(label: string, onClick: () => void) {
+    return (
+      <div className="table-actions-header">
+        <span>{label}</span>
+        <button
+          className="table-settings-trigger cursor-pointer"
+          type="button"
+          onClick={onClick}
+          aria-label={`${label}列表字段设置`}
+        >
+          ⚙️
+        </button>
+      </div>
+    );
+  }
+
+  function renderTableHeader(column: TableSettingsColumn, target: Exclude<SettingsTarget, "closed">) {
+    if (column.key !== "actions") return column.label;
+    return renderActionsHeader(column.label, () => setSettingsTarget(target));
+  }
+
+  function renderHostCell(item: DockerHostItem, key: string) {
+    switch (key) {
+      case "id":
+        return item.id;
+      case "name":
+        return item.name;
+      case "endpoint":
+        return <code>{item.endpoint}</code>;
+      case "env":
+        return item.env || "-";
+      case "owner":
+        return item.owner || "-";
+      case "status":
+        return <span className={`docker-status docker-status-${item.status ?? "unknown"}`}>{item.status || "unknown"}</span>;
+      case "version":
+        return item.version || "-";
+      case "updatedAt":
+        return formatDateTime(item.updatedAt);
+      case "actions":
+        return (
+          <div className="rbac-row-actions">
+            <RowActionOverflow
+              title="Docker 主机更多操作"
+              actions={[
+                { key: "select", label: "查看资源", onClick: () => { setSelectedHostId(item.id); setResourcePage(1); } },
+                { key: "check", label: checkingHostId === item.id ? "校验中..." : "校验", permissionKey: "button.docker.host.check", disabled: checkingHostId === item.id, onClick: () => void handleCheckHost(item.id) },
+                { key: "stack", label: "创建Stack", permissionKey: "button.docker.compose_stack.create", onClick: () => { setSelectedHostId(item.id); setStackForm({ ...defaultStackForm(), hostId: String(item.id) }); setDrawer("stack-create"); } },
+                { key: "edit", label: "编辑", permissionKey: "button.docker.host.update", onClick: () => openHostEditDrawer(item) },
+                { key: "delete", label: "删除", permissionKey: "button.docker.host.delete", disabled: item.status === "connected", onClick: () => setDeleteHostTarget(item) },
+              ]}
+            />
+          </div>
+        );
+      default:
+        return "-";
+    }
+  }
+
+  function renderResourceCell(item: DockerResourceItem, key: string) {
+    switch (key) {
+      case "id":
+        return <code>{shorten(item.id)}</code>;
+      case "type":
+        return item.type;
+      case "name":
+        return item.name || "-";
+      case "status":
+        return item.status || "-";
+      case "image":
+        return item.image || "-";
+      case "driver":
+        return item.driver || "-";
+      case "actions":
+        return (
+          <div className="rbac-row-actions">
+            <RowActionOverflow
+              title="Docker 资源更多操作"
+              actions={(item.aiopsActions ?? []).flatMap((action) => [
+                { key: `${action}-dry`, label: `${action} dry-run`, permissionKey: "button.docker.action.run", disabled: runningActionKey === `${item.id}-${action}-dry`, onClick: () => requestResourceAction(item, action, true) },
+                { key: `${action}-run`, label: action === "remove" ? "删除" : action, permissionKey: "button.docker.action.run", disabled: runningActionKey === `${item.id}-${action}-run`, onClick: () => requestResourceAction(item, action, false) },
+              ])}
+            />
+          </div>
+        );
+      default:
+        return "-";
+    }
+  }
+
+  function renderStackCell(item: DockerComposeStackItem, key: string) {
+    switch (key) {
+      case "id":
+        return item.id;
+      case "hostId":
+        return item.hostId;
+      case "name":
+        return item.name;
+      case "status":
+        return item.status || "-";
+      case "services":
+        return item.services ?? 0;
+      case "updatedAt":
+        return formatDateTime(item.updatedAt);
+      case "actions":
+        return (
+          <div className="rbac-row-actions">
+            <RowActionOverflow
+              title="Compose Stack 更多操作"
+              actions={[
+                { key: "validate-dry", label: "validate dry-run", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-validate-dry`, onClick: () => requestComposeAction(item, "validate", true) },
+                { key: "validate", label: "校验", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-validate-run`, onClick: () => requestComposeAction(item, "validate", false) },
+                { key: "deploy-dry", label: "deploy dry-run", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-deploy-dry`, onClick: () => requestComposeAction(item, "deploy", true) },
+                { key: "deploy", label: "部署", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-deploy-run`, onClick: () => requestComposeAction(item, "deploy", false) },
+                { key: "restart", label: "重启", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-restart-run`, onClick: () => requestComposeAction(item, "restart", false) },
+                { key: "down", label: "下线", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-down-run`, onClick: () => requestComposeAction(item, "down", false) },
+                { key: "edit", label: "编辑", permissionKey: "button.docker.compose_stack.update", onClick: () => openStackEditDrawer(item) },
+                { key: "delete", label: "删除", permissionKey: "button.docker.compose_stack.delete", disabled: item.status === "running" || item.status === "deploying", onClick: () => setDeleteStackTarget(item) },
+              ]}
+            />
+          </div>
+        );
+      default:
+        return "-";
+    }
+  }
+
   const drawerVisible = drawer !== "closed";
   const hostDrawer = drawer === "host-create" || drawer === "host-edit";
   const stackDrawer = drawer === "stack-create" || drawer === "stack-edit";
@@ -557,36 +699,13 @@ export function DockerPage() {
             <table className="rbac-table">
               <thead>
                 <tr>
-                  {visibleHostColumns.map((key) => <th key={key}>{key === "actions" ? actionsHeader("操作", () => setSettingsTarget("hosts")) : hostColumns.find((item) => item.key === key)?.label}</th>)}
+                  {visibleHostColumnDefs.map((column) => <th key={column.key}>{renderTableHeader(column, "hosts")}</th>)}
                 </tr>
               </thead>
               <tbody>
                 {hostLoading ? <tr><td colSpan={visibleHostColumns.length}>加载中...</td></tr> : hosts.list.length === 0 ? <tr><td colSpan={visibleHostColumns.length}>暂无数据</td></tr> : hosts.list.map((item) => (
                   <tr key={item.id} className={selectedHostId === item.id ? "docker-selected-row" : ""}>
-                    {hostColumnSet.has("id") && <td>{item.id}</td>}
-                    {hostColumnSet.has("name") && <td>{item.name}</td>}
-                    {hostColumnSet.has("endpoint") && <td><code>{item.endpoint}</code></td>}
-                    {hostColumnSet.has("env") && <td>{item.env || "-"}</td>}
-                    {hostColumnSet.has("owner") && <td>{item.owner || "-"}</td>}
-                    {hostColumnSet.has("status") && <td><span className={`docker-status docker-status-${item.status ?? "unknown"}`}>{item.status || "unknown"}</span></td>}
-                    {hostColumnSet.has("version") && <td>{item.version || "-"}</td>}
-                    {hostColumnSet.has("updatedAt") && <td>{formatDateTime(item.updatedAt)}</td>}
-                    {hostColumnSet.has("actions") && (
-                      <td>
-                        <div className="rbac-row-actions">
-                          <RowActionOverflow
-                            title="Docker 主机更多操作"
-                            actions={[
-                              { key: "select", label: "查看资源", onClick: () => { setSelectedHostId(item.id); setResourcePage(1); } },
-                              { key: "check", label: checkingHostId === item.id ? "校验中..." : "校验", permissionKey: "button.docker.host.check", disabled: checkingHostId === item.id, onClick: () => void handleCheckHost(item.id) },
-                              { key: "stack", label: "创建Stack", permissionKey: "button.docker.compose_stack.create", onClick: () => { setSelectedHostId(item.id); setStackForm({ ...defaultStackForm(), hostId: String(item.id) }); setDrawer("stack-create"); } },
-                              { key: "edit", label: "编辑", permissionKey: "button.docker.host.update", onClick: () => openHostEditDrawer(item) },
-                              { key: "delete", label: "删除", permissionKey: "button.docker.host.delete", disabled: item.status === "connected", onClick: () => setDeleteHostTarget(item) },
-                            ]}
-                          />
-                        </div>
-                      </td>
-                    )}
+                    {visibleHostColumnDefs.map((column) => <td key={column.key}>{renderHostCell(item, column.key)}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -615,30 +734,12 @@ export function DockerPage() {
           <div className="rbac-table-wrapper rbac-module-scroll">
             <table className="rbac-table">
               <thead>
-                <tr>{visibleResourceColumns.map((key) => <th key={key}>{key === "actions" ? actionsHeader("操作", () => setSettingsTarget("resources")) : resourceColumns.find((item) => item.key === key)?.label}</th>)}</tr>
+                <tr>{visibleResourceColumnDefs.map((column) => <th key={column.key}>{renderTableHeader(column, "resources")}</th>)}</tr>
               </thead>
               <tbody>
                 {resourceLoading ? <tr><td colSpan={visibleResourceColumns.length}>加载中...</td></tr> : resources.list.length === 0 ? <tr><td colSpan={visibleResourceColumns.length}>暂无资源</td></tr> : resources.list.map((item) => (
                   <tr key={`${item.type}-${item.id}`}>
-                    {resourceColumnSet.has("id") && <td><code>{shorten(item.id)}</code></td>}
-                    {resourceColumnSet.has("type") && <td>{item.type}</td>}
-                    {resourceColumnSet.has("name") && <td>{item.name || "-"}</td>}
-                    {resourceColumnSet.has("status") && <td>{item.status || "-"}</td>}
-                    {resourceColumnSet.has("image") && <td>{item.image || "-"}</td>}
-                    {resourceColumnSet.has("driver") && <td>{item.driver || "-"}</td>}
-                    {resourceColumnSet.has("actions") && (
-                      <td>
-                        <div className="rbac-row-actions">
-                          <RowActionOverflow
-                            title="Docker 资源更多操作"
-                            actions={(item.aiopsActions ?? []).flatMap((action) => [
-                              { key: `${action}-dry`, label: `${action} dry-run`, permissionKey: "button.docker.action.run", disabled: runningActionKey === `${item.id}-${action}-dry`, onClick: () => requestResourceAction(item, action, true) },
-                              { key: `${action}-run`, label: action === "remove" ? "删除" : action, permissionKey: "button.docker.action.run", disabled: runningActionKey === `${item.id}-${action}-run`, onClick: () => requestResourceAction(item, action, false) },
-                            ])}
-                          />
-                        </div>
-                      </td>
-                    )}
+                    {visibleResourceColumnDefs.map((column) => <td key={column.key}>{renderResourceCell(item, column.key)}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -660,36 +761,12 @@ export function DockerPage() {
           <div className="rbac-table-wrapper rbac-module-scroll">
             <table className="rbac-table">
               <thead>
-                <tr>{visibleStackColumns.map((key) => <th key={key}>{key === "actions" ? actionsHeader("操作", () => setSettingsTarget("stacks")) : stackColumns.find((item) => item.key === key)?.label}</th>)}</tr>
+                <tr>{visibleStackColumnDefs.map((column) => <th key={column.key}>{renderTableHeader(column, "stacks")}</th>)}</tr>
               </thead>
               <tbody>
                 {stackLoading ? <tr><td colSpan={visibleStackColumns.length}>加载中...</td></tr> : stacks.list.length === 0 ? <tr><td colSpan={visibleStackColumns.length}>暂无 Stack</td></tr> : stacks.list.map((item) => (
                   <tr key={item.id}>
-                    {stackColumnSet.has("id") && <td>{item.id}</td>}
-                    {stackColumnSet.has("hostId") && <td>{item.hostId}</td>}
-                    {stackColumnSet.has("name") && <td>{item.name}</td>}
-                    {stackColumnSet.has("status") && <td>{item.status || "-"}</td>}
-                    {stackColumnSet.has("services") && <td>{item.services ?? 0}</td>}
-                    {stackColumnSet.has("updatedAt") && <td>{formatDateTime(item.updatedAt)}</td>}
-                    {stackColumnSet.has("actions") && (
-                      <td>
-                        <div className="rbac-row-actions">
-                          <RowActionOverflow
-                            title="Compose Stack 更多操作"
-                            actions={[
-                              { key: "validate-dry", label: "validate dry-run", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-validate-dry`, onClick: () => requestComposeAction(item, "validate", true) },
-                              { key: "validate", label: "校验", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-validate-run`, onClick: () => requestComposeAction(item, "validate", false) },
-                              { key: "deploy-dry", label: "deploy dry-run", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-deploy-dry`, onClick: () => requestComposeAction(item, "deploy", true) },
-                              { key: "deploy", label: "部署", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-deploy-run`, onClick: () => requestComposeAction(item, "deploy", false) },
-                              { key: "restart", label: "重启", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-restart-run`, onClick: () => requestComposeAction(item, "restart", false) },
-                              { key: "down", label: "下线", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-down-run`, onClick: () => requestComposeAction(item, "down", false) },
-                              { key: "edit", label: "编辑", permissionKey: "button.docker.compose_stack.update", onClick: () => openStackEditDrawer(item) },
-                              { key: "delete", label: "删除", permissionKey: "button.docker.compose_stack.delete", disabled: item.status === "running" || item.status === "deploying", onClick: () => setDeleteStackTarget(item) },
-                            ]}
-                          />
-                        </div>
-                      </td>
-                    )}
+                    {visibleStackColumnDefs.map((column) => <td key={column.key}>{renderStackCell(item, column.key)}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -801,6 +878,11 @@ export function DockerPage() {
           else if (settingsTarget === "stacks") setVisibleStackColumns((prev) => toggleColumn(prev, key, stackColumns));
           else setVisibleHostColumns((prev) => toggleColumn(prev, key, hostColumns));
         }}
+        onMoveColumn={(key, direction) => {
+          if (settingsTarget === "resources") setVisibleResourceColumns((prev) => moveColumn(prev, key, direction));
+          else if (settingsTarget === "stacks") setVisibleStackColumns((prev) => moveColumn(prev, key, direction));
+          else setVisibleHostColumns((prev) => moveColumn(prev, key, direction));
+        }}
         onReset={() => {
           if (settingsTarget === "resources") setVisibleResourceColumns(sanitizeVisibleColumnKeys(defaultResourceColumns, resourceColumns));
           else if (settingsTarget === "stacks") setVisibleStackColumns(sanitizeVisibleColumnKeys(defaultStackColumns, stackColumns));
@@ -808,15 +890,6 @@ export function DockerPage() {
         }}
       />
     </section>
-  );
-}
-
-function actionsHeader(label: string, onClick: () => void) {
-  return (
-    <div className="table-actions-header">
-      <span>{label}</span>
-      <button className="table-settings-trigger cursor-pointer" type="button" onClick={onClick}>列</button>
-    </div>
   );
 }
 
@@ -850,6 +923,16 @@ function toggleColumn(current: string[], columnKey: string, columns: TableSettin
   if (!column || column.required) return current;
   const next = current.includes(columnKey) ? current.filter((key) => key !== columnKey) : [...current, columnKey];
   return sanitizeVisibleColumnKeys(next, columns);
+}
+
+function moveColumn(current: string[], columnKey: string, direction: "up" | "down") {
+  const index = current.indexOf(columnKey);
+  if (index < 0) return current;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= current.length) return current;
+  const next = [...current];
+  [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+  return next;
 }
 
 function parseJSONObject(raw: string, label: string): Record<string, unknown> {
