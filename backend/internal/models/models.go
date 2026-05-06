@@ -250,16 +250,43 @@ type ToolItem struct {
 
 type DockerHost struct {
 	BaseModel
-	Name      string `gorm:"size:128;not null" json:"name"`
-	Endpoint  string `gorm:"size:255;not null" json:"endpoint"`
-	TLSEnable bool   `gorm:"default:false" json:"tlsEnable"`
+	Name            string            `gorm:"size:128;not null" json:"name"`
+	Endpoint        string            `gorm:"size:255;not null" json:"endpoint"`
+	TLSEnable       bool              `gorm:"default:false" json:"tlsEnable"`
+	Env             string            `gorm:"size:32;index;default:prod" json:"env"`
+	Owner           string            `gorm:"size:128;index" json:"owner"`
+	Status          string            `gorm:"size:32;index;default:unknown" json:"status"`
+	Version         string            `gorm:"size:64" json:"version"`
+	Labels          datatypes.JSONMap `gorm:"type:jsonb" json:"labels"`
+	Metadata        datatypes.JSONMap `gorm:"type:jsonb" json:"metadata"`
+	LastHeartbeatAt *time.Time        `gorm:"index" json:"lastHeartbeatAt,omitempty"`
 }
 
 type DockerComposeStack struct {
 	BaseModel
-	HostID  uint   `json:"hostId"`
-	Name    string `gorm:"size:128;not null" json:"name"`
-	Content string `gorm:"type:text;not null" json:"content"`
+	HostID         uint       `gorm:"index;not null" json:"hostId"`
+	Name           string     `gorm:"size:128;not null" json:"name"`
+	Status         string     `gorm:"size:32;index;default:draft" json:"status"`
+	Services       int        `gorm:"default:0" json:"services"`
+	Content        string     `gorm:"type:text;not null" json:"content"`
+	LastDeployedAt *time.Time `gorm:"index" json:"lastDeployedAt,omitempty"`
+}
+
+type DockerOperation struct {
+	BaseModel
+	TraceID      string            `gorm:"size:64;index;not null" json:"traceId"`
+	HostID       uint              `gorm:"index;not null" json:"hostId"`
+	ResourceType string            `gorm:"size:64;index;not null" json:"resourceType"`
+	ResourceID   string            `gorm:"size:255;index" json:"resourceId"`
+	Action       string            `gorm:"size:64;index;not null" json:"action"`
+	Status       string            `gorm:"size:32;index;not null" json:"status"`
+	DryRun       bool              `gorm:"index;default:true" json:"dryRun"`
+	RiskLevel    string            `gorm:"size:16;index;default:P2" json:"riskLevel"`
+	Request      datatypes.JSONMap `gorm:"type:jsonb" json:"request"`
+	Result       datatypes.JSONMap `gorm:"type:jsonb" json:"result"`
+	ErrorMessage string            `gorm:"type:text" json:"errorMessage"`
+	StartedAt    *time.Time        `gorm:"index" json:"startedAt,omitempty"`
+	FinishedAt   *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
 }
 
 type MiddlewareInstance struct {
@@ -344,6 +371,7 @@ func AutoMigrateModels() []interface{} {
 		&ToolItem{},
 		&DockerHost{},
 		&DockerComposeStack{},
+		&DockerOperation{},
 		&MiddlewareInstance{},
 		&ObservabilitySource{},
 		&KubernetesCluster{},

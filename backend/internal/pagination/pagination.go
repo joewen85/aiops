@@ -13,7 +13,7 @@ type Query struct {
 
 func Parse(c *gin.Context) Query {
 	page := parsePositive(c.Query("page"), 1)
-	pageSize := parsePositive(c.Query("pageSize"), 20)
+	pageSize := parsePositive(c.Query("pageSize"), 10)
 	if pageSize > 200 {
 		pageSize = 200
 	}

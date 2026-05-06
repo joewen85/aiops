@@ -597,6 +597,84 @@ h4 {
   margin-top: 2px;
 }
 
+.docker-module-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.docker-selected-row td {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+}
+
+.docker-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.docker-status-connected {
+  color: #047857;
+  background: color-mix(in srgb, #10b981 12%, transparent);
+  border-color: color-mix(in srgb, #10b981 36%, var(--border));
+}
+
+.docker-status-error {
+  color: #b91c1c;
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+  border-color: color-mix(in srgb, #ef4444 34%, var(--border));
+}
+
+.docker-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.docker-checkbox-label input {
+  width: auto;
+}
+
+.docker-compose-editor {
+  min-height: 220px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.docker-aiops-card {
+  gap: 10px;
+}
+
+.docker-aiops-protocol,
+.docker-operation-list {
+  display: grid;
+  gap: 8px;
+}
+
+.docker-aiops-protocol > div,
+.docker-operation-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+
+.docker-aiops-result {
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  font-size: 12px;
+}
+
 .rbac-binding-actions {
   display: flex;
   gap: 8px;

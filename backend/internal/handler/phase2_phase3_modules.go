@@ -503,27 +503,6 @@ func (h *Handler) ApproveTicket(c *gin.Context) {
 	response.Success(c, gin.H{"id": id, "approved": true})
 }
 
-func (h *Handler) ListDockerHosts(c *gin.Context)  { listByModel[models.DockerHost](c, h.DB) }
-func (h *Handler) GetDockerHost(c *gin.Context)    { getByID[models.DockerHost](c, h.DB) }
-func (h *Handler) CreateDockerHost(c *gin.Context) { createByModel[models.DockerHost](c, h.DB) }
-func (h *Handler) UpdateDockerHost(c *gin.Context) { updateByModel[models.DockerHost](c, h.DB) }
-func (h *Handler) DeleteDockerHost(c *gin.Context) { deleteByModel[models.DockerHost](c, h.DB) }
-
-func (h *Handler) ListComposeStacks(c *gin.Context) { listByModel[models.DockerComposeStack](c, h.DB) }
-func (h *Handler) CreateComposeStack(c *gin.Context) {
-	createByModel[models.DockerComposeStack](c, h.DB)
-}
-func (h *Handler) UpdateComposeStack(c *gin.Context) {
-	updateByModel[models.DockerComposeStack](c, h.DB)
-}
-func (h *Handler) DeleteComposeStack(c *gin.Context) {
-	deleteByModel[models.DockerComposeStack](c, h.DB)
-}
-
-func (h *Handler) DockerStubAction(c *gin.Context) {
-	response.Success(c, gin.H{"result": "docker action accepted", "status": "stub"})
-}
-
 func (h *Handler) ListMiddlewareInstances(c *gin.Context) {
 	listByModel[models.MiddlewareInstance](c, h.DB)
 }

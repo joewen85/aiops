@@ -7,6 +7,7 @@ import { AppLayout } from "@/layouts/AppLayout";
 import { CMDBPage } from "@/pages/CMDBPage";
 import { CloudPage } from "@/pages/CloudPage";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { DockerPage } from "@/pages/DockerPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MessagesPage } from "@/pages/MessagesPage";
 import { ModulePage } from "@/pages/ModulePage";
@@ -35,7 +36,7 @@ export const router = createBrowserRouter([
           { path: "messages", element: withMenuGuard("menu.messages", <MessagesPage />) },
           { path: "cloud", element: withMenuGuard("menu.cloud", <CloudPage />) },
           { path: "tickets", element: withMenuGuard("menu.tickets", <ModulePage />) },
-          { path: "docker", element: withMenuGuard("menu.docker", <ModulePage />) },
+          { path: "docker", element: withMenuGuard("menu.docker", <DockerPage />) },
           { path: "middleware", element: withMenuGuard("menu.middleware", <ModulePage />) },
           { path: "observability", element: withMenuGuard("menu.observability", <ModulePage />) },
           { path: "kubernetes", element: withMenuGuard("menu.kubernetes", <ModulePage />) },
