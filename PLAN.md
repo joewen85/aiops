@@ -257,17 +257,23 @@
 - 技术要点与验收：Prometheus/Alertmanager 事件拉取；统一严重级别；验收=事件可检索可关联。
 
 ### 12) 站内消息
-- 功能点：支持广播、用户、角色、部门频道推送；支持消息列表、搜索、频道过滤、已读/未读过滤、按用户标记已读；支持消息 `traceId` 全链路追踪；前端提供站内消息列表、分页、字段自定义、右侧抽屉创建消息、标记已读。
-- 数据模型：`in_app_messages` 保存消息主体（`trace_id/channel/target/title/content/data/read`）；`message_read_receipts` 保存用户级已读回执（`message_id/user_id/read_at`）；`message_channels` 为逻辑层概念，频道枚举为 `broadcast/user/role/department`。
+- 功能点：支持广播、用户、角色、部门频道推送；支持消息列表、搜索、频道过滤、模块过滤、级别过滤、已读/未读过滤、按用户标记已读；支持消息 `traceId` 全链路追踪；前端提供站内消息列表、分页、字段自定义、字段位置编排、右侧抽屉创建消息、标记已读。
+- 平台级通知：站内消息是所有模块的统一通知底座，任务中心、多云管理、CMDB、Docker、中间件、工单、事件、Kubernetes、可观测性、AIOps 等模块不得各自实现通知逻辑，统一调用通知发布服务写入 `in_app_messages` 并推送 WebSocket。
+- 数据模型：`in_app_messages` 保存消息主体（`trace_id/channel/target/title/content/module/source/event/severity/resource_type/resource_id/data/read`）；`message_read_receipts` 保存用户级已读回执（`message_id/user_id/read_at`）；`message_channels` 为逻辑层概念，频道枚举为 `broadcast/user/role/department`。
 - 接口清单：
-  - `GET /messages`：分页查询当前用户可见消息，支持 `keyword/channel/read/page/pageSize`。
+  - `GET /messages`：分页查询当前用户可见消息，支持 `keyword/channel/module/severity/event/read/page/pageSize`。
   - `POST /messages`：创建消息并实时推送，需校验频道与目标合法性；`broadcast` 无目标，`user` 校验用户，`role` 校验角色，`department` 校验部门。
   - `POST /messages/:id/read`：仅允许当前用户对可见消息标记已读，写入用户级读回执。
+  - `GET /messages/aiops/protocol`：返回站内消息 AIOps 读取协议、支持模块、级别、查询 Schema 与安全边界。
+  - `GET /messages/aiops/context`：为 AIOps 提供当前用户可见通知上下文读取能力，支持 `module/severity/unreadOnly/limit`，只读不改变已读状态。
   - `GET /ws`：WebSocket 实时通道，token 鉴权后按用户、角色、部门过滤推送。
 - 后端工程要求：
   - WebSocket 需做 token 鉴权、运行时角色校验、Origin 校验、读写超时、ping/pong 保活、最大消息体限制。
   - Redis Pub/Sub 用于多实例广播；消息需携带节点来源，避免本实例重复消费本实例发布的消息。
   - 消息创建需生成 `traceId`，用于 API 返回、WebSocket 推送、前端列表追踪。
+  - 模块通知统一协议：`module/source/event/severity/resourceType/resourceId/traceId/title/content/data`，模块只传业务上下文，不直接操作消息表。
+  - 首批打通通知事件：任务执行完成/失败、多云账号校验、多云资源同步、CMDB 同步、Docker 动作、中间件动作；后续模块按同一服务接入。
+  - AIOps 读取能力：只能读取当前用户可见消息；默认最多返回 20 条，最大 50 条；读取接口不得修改已读回执。
   - 已读/未读必须按用户隔离，禁止使用单个全局 `read` 字段作为最终判定，避免角色/部门/广播消息被一人读取后全员变已读。
   - 历史数据迁移需兼容已有 `in_app_messages`，新增追踪字段不应导致已有数据迁移失败。
 - 前端 UI/UX 要求：

@@ -278,6 +278,21 @@ func (h *Handler) VerifyCloudAccount(c *gin.Context) {
 		return
 	}
 	if err := provider.Verify(cred); err != nil {
+		_, _ = h.PublishNotification(NotificationOptions{
+			Module:       "cloud",
+			Source:       "cloud-account",
+			Event:        "cloud.account.verify.failed",
+			Severity:     "error",
+			ResourceType: "cloudAccount",
+			ResourceID:   strconv.FormatUint(uint64(account.ID), 10),
+			Title:        "云账号校验失败",
+			Content:      account.Provider + " 云账号 " + account.Name + " 校验失败",
+			Data: gin.H{
+				"accountId": account.ID,
+				"provider":  account.Provider,
+				"region":    account.Region,
+			},
+		})
 		response.Error(c, http.StatusBadRequest, appErr.New(4004, h.cloudProviderExternalError("cloud account verify failed", err)))
 		return
 	}
@@ -285,6 +300,21 @@ func (h *Handler) VerifyCloudAccount(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
+	_, _ = h.PublishNotification(NotificationOptions{
+		Module:       "cloud",
+		Source:       "cloud-account",
+		Event:        "cloud.account.verify.success",
+		Severity:     "success",
+		ResourceType: "cloudAccount",
+		ResourceID:   strconv.FormatUint(uint64(account.ID), 10),
+		Title:        "云账号校验通过",
+		Content:      account.Provider + " 云账号 " + account.Name + " 校验通过",
+		Data: gin.H{
+			"accountId": account.ID,
+			"provider":  account.Provider,
+			"region":    account.Region,
+		},
+	})
 	response.Success(c, gin.H{"id": id, "verified": true})
 }
 
@@ -347,6 +377,17 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 				"error": publicMessage,
 			},
 		}).Error
+		_, _ = h.PublishNotification(NotificationOptions{
+			Module:       "cloud",
+			Source:       "cloud-sync",
+			Event:        "cloud.sync.failed",
+			Severity:     "error",
+			ResourceType: "cloudSyncJob",
+			ResourceID:   strconv.FormatUint(uint64(job.ID), 10),
+			Title:        "云资源同步失败",
+			Content:      account.Provider + " 云账号 " + account.Name + " 同步失败",
+			Data:         gin.H{"accountId": account.ID, "jobId": job.ID, "provider": account.Provider, "region": account.Region},
+		})
 		response.Error(c, http.StatusBadRequest, appErr.New(4005, publicMessage))
 		return
 	}
@@ -360,6 +401,17 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 			"finished_at": &finished,
 			"summary":     syncSummary,
 		}).Error
+		_, _ = h.PublishNotification(NotificationOptions{
+			Module:       "cloud",
+			Source:       "cloud-sync",
+			Event:        "cloud.sync.failed",
+			Severity:     "error",
+			ResourceType: "cloudSyncJob",
+			ResourceID:   strconv.FormatUint(uint64(job.ID), 10),
+			Title:        "云资源同步失败",
+			Content:      account.Provider + " 云账号 " + account.Name + " 资产落库失败",
+			Data:         gin.H{"accountId": account.ID, "jobId": job.ID, "provider": account.Provider, "region": account.Region},
+		})
 		response.Error(c, http.StatusInternalServerError, appErr.New(5000, publicMessage))
 		return
 	}
@@ -376,6 +428,17 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 			"finished_at": &finished,
 			"summary":     syncSummary,
 		}).Error
+		_, _ = h.PublishNotification(NotificationOptions{
+			Module:       "cloud",
+			Source:       "cloud-sync",
+			Event:        "cloud.sync.failed",
+			Severity:     "error",
+			ResourceType: "cloudSyncJob",
+			ResourceID:   strconv.FormatUint(uint64(job.ID), 10),
+			Title:        "云资源同步失败",
+			Content:      account.Provider + " 云账号 " + account.Name + " 映射 CMDB 失败",
+			Data:         gin.H{"accountId": account.ID, "jobId": job.ID, "provider": account.Provider, "region": account.Region},
+		})
 		response.Error(c, http.StatusInternalServerError, appErr.New(5000, publicMessage))
 		return
 	}
@@ -396,6 +459,25 @@ func (h *Handler) SyncCloudAccount(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
+	_, _ = h.PublishNotification(NotificationOptions{
+		Module:       "cloud",
+		Source:       "cloud-sync",
+		Event:        "cloud.sync.success",
+		Severity:     "success",
+		ResourceType: "cloudSyncJob",
+		ResourceID:   strconv.FormatUint(uint64(job.ID), 10),
+		Title:        "云资源同步完成",
+		Content:      account.Provider + " 云账号 " + account.Name + " 同步完成",
+		Data: gin.H{
+			"accountId":      account.ID,
+			"jobId":          job.ID,
+			"provider":       account.Provider,
+			"region":         account.Region,
+			"providerAssets": len(assets),
+			"cloudAssets":    len(cloudAssets),
+			"cmdbAssets":     len(cmdbResources),
+		},
+	})
 	payload := gin.H{
 		"id":                 id,
 		"job":                savedJob,

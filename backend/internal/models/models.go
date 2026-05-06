@@ -224,13 +224,19 @@ type Event struct {
 
 type InAppMessage struct {
 	BaseModel
-	TraceID string            `gorm:"size:64;index" json:"traceId"`
-	Channel string            `gorm:"size:64;index;not null" json:"channel"`
-	Target  string            `gorm:"size:128;index;not null" json:"target"`
-	Title   string            `gorm:"size:255" json:"title"`
-	Content string            `gorm:"type:text;not null" json:"content"`
-	Data    datatypes.JSONMap `gorm:"type:jsonb" json:"data"`
-	Read    bool              `gorm:"default:false" json:"read"`
+	TraceID      string            `gorm:"size:64;index" json:"traceId"`
+	Channel      string            `gorm:"size:64;index;not null" json:"channel"`
+	Target       string            `gorm:"size:128;index;not null" json:"target"`
+	Title        string            `gorm:"size:255" json:"title"`
+	Content      string            `gorm:"type:text;not null" json:"content"`
+	Module       string            `gorm:"size:64;index" json:"module"`
+	Source       string            `gorm:"size:64;index" json:"source"`
+	Event        string            `gorm:"size:64;index" json:"event"`
+	Severity     string            `gorm:"size:32;index;default:info" json:"severity"`
+	ResourceType string            `gorm:"size:64;index" json:"resourceType"`
+	ResourceID   string            `gorm:"size:128;index" json:"resourceId"`
+	Data         datatypes.JSONMap `gorm:"type:jsonb" json:"data"`
+	Read         bool              `gorm:"default:false" json:"read"`
 }
 
 type MessageReadReceipt struct {

@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 
 	appErr "devops-system/backend/internal/errors"
@@ -56,6 +54,15 @@ func (h *Handler) ListMessages(c *gin.Context) {
 		}
 		query = query.Where("channel = ?", channel)
 	}
+	if module := strings.TrimSpace(c.Query("module")); module != "" {
+		query = query.Where("module = ?", normalizeMessageModule(module))
+	}
+	if severity := strings.TrimSpace(c.Query("severity")); severity != "" {
+		query = query.Where("severity = ?", normalizeMessageSeverity(severity))
+	}
+	if event := strings.TrimSpace(c.Query("event")); event != "" {
+		query = query.Where("event = ?", event)
+	}
 
 	readFilter := strings.ToLower(strings.TrimSpace(c.Query("read")))
 	if readFilter == "true" || readFilter == "false" {
@@ -82,11 +89,17 @@ func (h *Handler) ListMessages(c *gin.Context) {
 
 func (h *Handler) CreateMessage(c *gin.Context) {
 	var req struct {
-		Channel string                 `json:"channel"`
-		Target  string                 `json:"target"`
-		Title   string                 `json:"title"`
-		Content string                 `json:"content"`
-		Data    map[string]interface{} `json:"data"`
+		Channel      string                 `json:"channel"`
+		Target       string                 `json:"target"`
+		Title        string                 `json:"title"`
+		Content      string                 `json:"content"`
+		Module       string                 `json:"module"`
+		Source       string                 `json:"source"`
+		Event        string                 `json:"event"`
+		Severity     string                 `json:"severity"`
+		ResourceType string                 `json:"resourceType"`
+		ResourceID   string                 `json:"resourceId"`
+		Data         map[string]interface{} `json:"data"`
 	}
 	if !bindJSON(c, &req) {
 		return
@@ -106,29 +119,75 @@ func (h *Handler) CreateMessage(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, appErr.New(3001, "message content is required"))
 		return
 	}
-	message := models.InAppMessage{
-		TraceID: uuid.NewString(),
-		Channel: channel,
-		Target:  resolvedTarget,
-		Title:   strings.TrimSpace(req.Title),
-		Content: content,
-		Data:    datatypes.JSONMap(req.Data),
-	}
-	if err := h.DB.Create(&message).Error; err != nil {
+	message, err := h.PublishNotification(NotificationOptions{
+		Channel:      channel,
+		Target:       resolvedTarget,
+		Title:        req.Title,
+		Content:      content,
+		Module:       req.Module,
+		Source:       defaultString(strings.TrimSpace(req.Source), "manual"),
+		Event:        req.Event,
+		Severity:     req.Severity,
+		ResourceType: req.ResourceType,
+		ResourceID:   req.ResourceID,
+		Data:         req.Data,
+	})
+	if err != nil {
 		response.Internal(c, err)
 		return
 	}
-	if h.Hub != nil {
-		h.Hub.Publish(ws.Message{
-			TraceID: message.TraceID,
-			Channel: message.Channel,
-			Target:  message.Target,
-			Title:   message.Title,
-			Content: message.Content,
-			Data:    message.Data,
-		})
-	}
 	response.Success(c, message)
+}
+
+func (h *Handler) MessageAIOpsProtocol(c *gin.Context) {
+	response.Success(c, messageAIOpsProtocol())
+}
+
+func (h *Handler) MessageAIOpsContext(c *gin.Context) {
+	claims, ok := middleware.GetClaims(c)
+	if !ok || claims == nil {
+		response.Error(c, http.StatusUnauthorized, appErr.ErrUnauthorized)
+		return
+	}
+	limit := 20
+	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			response.Error(c, http.StatusBadRequest, appErr.New(3001, "invalid limit"))
+			return
+		}
+		limit = parsed
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	query := h.visibleMessagesQuery(c)
+	if module := strings.TrimSpace(c.Query("module")); module != "" {
+		query = query.Where("module = ?", normalizeMessageModule(module))
+	}
+	if severity := strings.TrimSpace(c.Query("severity")); severity != "" {
+		query = query.Where("severity = ?", normalizeMessageSeverity(severity))
+	}
+	if strings.EqualFold(strings.TrimSpace(c.Query("unreadOnly")), "true") {
+		readIDsQuery := h.DB.Model(&models.MessageReadReceipt{}).Select("message_id").Where("user_id = ?", claims.UserID)
+		query = query.Where("id NOT IN (?)", readIDsQuery)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	var messages []models.InAppMessage
+	if err := query.Order("id desc").Limit(limit).Find(&messages).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"protocolVersion": messageAIOpsProtocolVersion,
+		"total":           total,
+		"limit":           limit,
+		"messages":        h.withReadState(messages, claims.UserID),
+	})
 }
 
 func (h *Handler) MarkMessageRead(c *gin.Context) {

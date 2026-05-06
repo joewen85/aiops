@@ -342,6 +342,8 @@ func permissionSeeds() []models.Permission {
 	addAPI("api.messages.message.list", "GET", "/api/v1/messages", "查询站内消息列表")
 	addAPI("api.messages.message.create", "POST", "/api/v1/messages", "创建站内消息")
 	addAPI("api.messages.message.read", "POST", "/api/v1/messages/:id/read", "标记消息已读")
+	addAPI("api.messages.aiops.protocol", "GET", "/api/v1/messages/aiops/protocol", "查询站内消息AIOps协议")
+	addAPI("api.messages.aiops.context", "GET", "/api/v1/messages/aiops/context", "读取站内消息AIOps上下文")
 
 	addAPI("api.cloud.account.list", "GET", "/api/v1/cloud/accounts", "查询云账号列表")
 	addAPI("api.cloud.account.create", "POST", "/api/v1/cloud/accounts", "创建云账号")

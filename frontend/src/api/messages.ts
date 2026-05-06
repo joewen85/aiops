@@ -8,6 +8,8 @@ interface ListMessagesParams {
   keyword?: string;
   channel?: MessageChannel | "";
   read?: "true" | "false" | "";
+  module?: string;
+  severity?: string;
 }
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -29,6 +31,8 @@ export async function listMessages(params: ListMessagesParams = {}): Promise<Pag
     keyword: params.keyword,
     channel: params.channel,
     read: params.read,
+    module: params.module,
+    severity: params.severity,
   });
   const { data } = await apiClient.get<ApiResponse<PageData<InAppMessageItem>>>(`/messages${query}`);
   return data.data;
@@ -53,4 +57,3 @@ export async function markMessageRead(messageId: number): Promise<{
   }>>(`/messages/${messageId}/read`);
   return data.data;
 }
-

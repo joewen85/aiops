@@ -509,6 +509,18 @@ func (h *Handler) DockerAction(c *gin.Context) {
 		updates["status"] = "failed"
 		updates["error_message"] = actionErr.Error()
 		_ = h.DB.Model(&models.DockerOperation{}).Where("id = ?", operation.ID).Updates(updates).Error
+		_, _ = h.PublishNotification(NotificationOptions{
+			TraceID:      traceID,
+			Module:       "docker",
+			Source:       "docker-action",
+			Event:        "docker.action.failed",
+			Severity:     "error",
+			ResourceType: req.ResourceType,
+			ResourceID:   req.ResourceID,
+			Title:        "Docker 动作失败",
+			Content:      "Docker " + req.ResourceType + " 执行 " + req.Action + " 失败",
+			Data:         gin.H{"hostId": host.ID, "operationId": operation.ID, "action": req.Action},
+		})
 		response.Error(c, http.StatusBadRequest, appErr.New(4016, "docker action failed"))
 		return
 	}
@@ -522,6 +534,18 @@ func (h *Handler) DockerAction(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
+	_, _ = h.PublishNotification(NotificationOptions{
+		TraceID:      traceID,
+		Module:       "docker",
+		Source:       "docker-action",
+		Event:        "docker.action.success",
+		Severity:     "success",
+		ResourceType: req.ResourceType,
+		ResourceID:   req.ResourceID,
+		Title:        "Docker 动作完成",
+		Content:      "Docker " + req.ResourceType + " 已执行 " + req.Action,
+		Data:         gin.H{"hostId": host.ID, "operationId": operation.ID, "action": req.Action},
+	})
 	response.Success(c, gin.H{"protocolVersion": dockerOpsProtocolVersion, "traceId": traceID, "operation": saved})
 }
 

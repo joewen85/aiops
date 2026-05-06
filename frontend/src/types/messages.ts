@@ -7,6 +7,12 @@ export interface InAppMessageItem {
   target: string;
   title?: string;
   content: string;
+  module?: string;
+  source?: string;
+  event?: string;
+  severity?: string;
+  resourceType?: string;
+  resourceId?: string;
   data?: Record<string, unknown>;
   read: boolean;
   readAt?: string;
@@ -19,6 +25,11 @@ export interface MessageCreatePayload {
   target?: string;
   title?: string;
   content: string;
+  module?: string;
+  source?: string;
+  event?: string;
+  severity?: string;
+  resourceType?: string;
+  resourceId?: string;
   data?: Record<string, unknown>;
 }
-

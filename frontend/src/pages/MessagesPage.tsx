@@ -17,9 +17,12 @@ import { showToast } from "@/utils/toast";
 const defaultPageSize = 10;
 const pageSizeOptions = [10, 20, 50];
 const messageListSettingsKey = "messages.table.settings";
-const defaultVisibleColumnKeys = ["status", "channel", "target", "title", "content", "traceId", "createdAt", "actions"];
+const defaultVisibleColumnKeys = ["status", "module", "severity", "channel", "target", "title", "content", "traceId", "createdAt", "actions"];
 const messageTableColumns: TableSettingsColumn[] = [
   { key: "status", label: "状态" },
+  { key: "module", label: "模块" },
+  { key: "severity", label: "级别" },
+  { key: "event", label: "事件" },
   { key: "channel", label: "频道" },
   { key: "target", label: "目标" },
   { key: "title", label: "标题" },
@@ -39,6 +42,8 @@ interface MessageFilterState {
   keyword: string;
   channel: "" | MessageChannel;
   read: "" | "true" | "false";
+  module: string;
+  severity: string;
 }
 
 interface MessageFormState {
@@ -46,11 +51,16 @@ interface MessageFormState {
   target: string;
   title: string;
   content: string;
+  module: string;
+  severity: string;
+  event: string;
+  resourceType: string;
+  resourceId: string;
   dataJSON: string;
 }
 
 function defaultFilter(): MessageFilterState {
-  return { keyword: "", channel: "", read: "" };
+  return { keyword: "", channel: "", read: "", module: "", severity: "" };
 }
 
 function defaultForm(): MessageFormState {
@@ -59,6 +69,11 @@ function defaultForm(): MessageFormState {
     target: "",
     title: "",
     content: "",
+    module: "system",
+    severity: "info",
+    event: "manual.message.created",
+    resourceType: "",
+    resourceId: "",
     dataJSON: "{}",
   };
 }
@@ -89,6 +104,8 @@ export function MessagesPage() {
         keyword: appliedFilter.keyword,
         channel: appliedFilter.channel,
         read: appliedFilter.read,
+        module: appliedFilter.module,
+        severity: appliedFilter.severity,
       });
       setData(result);
     } finally {
@@ -140,6 +157,11 @@ export function MessagesPage() {
       target: form.channel === "broadcast" ? "" : form.target,
       title: form.title,
       content: form.content,
+      module: form.module,
+      severity: form.severity,
+      event: form.event,
+      resourceType: form.resourceType,
+      resourceId: form.resourceId,
       data: parsedData,
     });
     showToast("消息已发送");
@@ -166,10 +188,20 @@ export function MessagesPage() {
     });
   }
 
+  function moveVisibleColumn(columnKey: string, direction: "up" | "down") {
+    setVisibleColumnKeys((current) => moveColumnKey(current, columnKey, direction));
+  }
+
   function renderCell(message: InAppMessageItem, key: string) {
     switch (key) {
       case "status":
         return <span className={message.read ? "message-status-read" : "message-status-unread"}>{message.read ? "已读" : "未读"}</span>;
+      case "module":
+        return message.module || "system";
+      case "severity":
+        return <span className={`message-severity message-severity-${message.severity || "info"}`}>{message.severity || "info"}</span>;
+      case "event":
+        return message.event || "-";
       case "channel":
         return channelLabel(message.channel);
       case "target":
@@ -249,6 +281,26 @@ export function MessagesPage() {
             <option value="false">未读</option>
             <option value="true">已读</option>
           </select>
+          <select
+            className="cloud-filter-control"
+            value={filter.module}
+            onChange={(event) => setFilter((prev) => ({ ...prev, module: event.target.value }))}
+          >
+            <option value="">全部模块</option>
+            {["tasks", "cloud", "cmdb", "docker", "middleware", "tickets", "events", "kubernetes", "observability", "aiops", "system"].map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+          <select
+            className="cloud-filter-control"
+            value={filter.severity}
+            onChange={(event) => setFilter((prev) => ({ ...prev, severity: event.target.value }))}
+          >
+            <option value="">全部级别</option>
+            {["info", "success", "warning", "error", "critical"].map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
           <div className="cloud-filter-actions">
             <button className="btn primary" type="submit">搜索</button>
             <button className="btn ghost" type="button" onClick={resetFilter}>重置</button>
@@ -264,8 +316,13 @@ export function MessagesPage() {
                     {key === "actions" ? (
                       <div className="table-actions-header">
                         <span>操作</span>
-                        <button className="table-settings-trigger cursor-pointer" type="button" onClick={() => setSettingsOpen(true)}>
-                          列
+                        <button
+                          className="table-settings-trigger cursor-pointer"
+                          type="button"
+                          onClick={() => setSettingsOpen(true)}
+                          aria-label="站内消息列表字段设置"
+                        >
+                          ⚙️
                         </button>
                       </div>
                     ) : (
@@ -319,42 +376,111 @@ export function MessagesPage() {
               <h3>创建消息</h3>
               <button className="btn ghost" onClick={() => setDrawerOpen(false)}>关闭</button>
             </header>
-            <form className="rbac-drawer-body form-grid" onSubmit={submitMessage}>
-              <label>
-                频道
-                <select
-                  value={form.channel}
-                  onChange={(event) => setForm((prev) => ({ ...prev, channel: event.target.value as MessageChannel }))}
-                >
-                  {channelOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                </select>
-              </label>
-              {form.channel !== "broadcast" && (
-                <label>
-                  目标
-                  <input
-                    value={form.target}
-                    onChange={(event) => setForm((prev) => ({ ...prev, target: event.target.value }))}
-                    placeholder={targetPlaceholder(form.channel)}
-                    required
+            <form className="rbac-drawer-body message-create-form" onSubmit={submitMessage}>
+              <section className="message-form-section">
+                <div className="message-form-section-title">
+                  <h4>投递范围</h4>
+                  <p className="muted">选择消息发送频道；广播消息会投递给所有登录用户。</p>
+                </div>
+                <div className="message-form-grid">
+                  <label className="message-form-field">
+                    <span>频道</span>
+                    <select
+                      value={form.channel}
+                      onChange={(event) => setForm((prev) => ({ ...prev, channel: event.target.value as MessageChannel }))}
+                    >
+                      {channelOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                    </select>
+                  </label>
+                  {form.channel !== "broadcast" && (
+                    <label className="message-form-field">
+                      <span>目标</span>
+                      <input
+                        value={form.target}
+                        onChange={(event) => setForm((prev) => ({ ...prev, target: event.target.value }))}
+                        placeholder={targetPlaceholder(form.channel)}
+                        required
+                      />
+                    </label>
+                  )}
+                </div>
+              </section>
+
+              <section className="message-form-section">
+                <div className="message-form-section-title">
+                  <h4>消息内容</h4>
+                  <p className="muted">标题用于列表识别，正文支持较长通知内容。</p>
+                </div>
+                <div className="message-form-grid">
+                  <label className="message-form-field message-form-field-wide">
+                    <span>标题</span>
+                    <input
+                      value={form.title}
+                      placeholder="例如：生产发布窗口提醒"
+                      onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                    />
+                  </label>
+                  <label className="message-form-field message-form-field-wide">
+                    <span>内容</span>
+                    <textarea
+                      className="message-content-editor"
+                      required
+                      value={form.content}
+                      placeholder="请输入消息正文..."
+                      onChange={(event) => setForm((prev) => ({ ...prev, content: event.target.value }))}
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="message-form-section">
+                <div className="message-form-section-title">
+                  <h4>扩展数据</h4>
+                  <p className="muted">可放入 traceId、跳转链接、业务上下文等机器可读字段。</p>
+                </div>
+                <div className="message-form-grid">
+                  <label className="message-form-field">
+                    <span>模块</span>
+                    <select value={form.module} onChange={(event) => setForm((prev) => ({ ...prev, module: event.target.value }))}>
+                      {["system", "tasks", "cloud", "cmdb", "docker", "middleware", "tickets", "events", "kubernetes", "observability", "aiops"].map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="message-form-field">
+                    <span>级别</span>
+                    <select value={form.severity} onChange={(event) => setForm((prev) => ({ ...prev, severity: event.target.value }))}>
+                      {["info", "success", "warning", "error", "critical"].map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="message-form-field">
+                    <span>事件</span>
+                    <input value={form.event} placeholder="module.event.name" onChange={(event) => setForm((prev) => ({ ...prev, event: event.target.value }))} />
+                  </label>
+                  <label className="message-form-field">
+                    <span>资源类型</span>
+                    <input value={form.resourceType} placeholder="task / cloudAccount / dockerHost" onChange={(event) => setForm((prev) => ({ ...prev, resourceType: event.target.value }))} />
+                  </label>
+                  <label className="message-form-field">
+                    <span>资源 ID</span>
+                    <input value={form.resourceId} placeholder="可选" onChange={(event) => setForm((prev) => ({ ...prev, resourceId: event.target.value }))} />
+                  </label>
+                </div>
+                <label className="message-form-field">
+                  <span>扩展数据 JSON</span>
+                  <textarea
+                    className="message-json-editor"
+                    value={form.dataJSON}
+                    onChange={(event) => setForm((prev) => ({ ...prev, dataJSON: event.target.value }))}
                   />
                 </label>
-              )}
-              <label>
-                标题
-                <input value={form.title} onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))} />
-              </label>
-              <label>
-                内容
-                <textarea required value={form.content} onChange={(event) => setForm((prev) => ({ ...prev, content: event.target.value }))} />
-              </label>
-              <label>
-                扩展数据 JSON
-                <textarea value={form.dataJSON} onChange={(event) => setForm((prev) => ({ ...prev, dataJSON: event.target.value }))} />
-              </label>
-              <div className="rbac-row-actions">
-                <button className="btn primary" type="submit">发送</button>
-                <button className="btn ghost" type="button" onClick={() => setDrawerOpen(false)}>取消</button>
+              </section>
+
+              <div className="message-form-actions">
+                <button className="btn primary cursor-pointer" type="submit">发送</button>
+                <button className="btn ghost cursor-pointer" type="button" onClick={() => setDrawerOpen(false)}>取消</button>
               </div>
             </form>
           </aside>
@@ -368,6 +494,7 @@ export function MessagesPage() {
         visibleColumnKeys={visibleColumnKeys}
         onClose={() => setSettingsOpen(false)}
         onToggleColumn={toggleVisibleColumn}
+        onMoveColumn={moveVisibleColumn}
         onReset={() => setVisibleColumnKeys(sanitizeVisibleColumnKeys(defaultVisibleColumnKeys, messageTableColumns))}
       />
     </section>
@@ -391,4 +518,14 @@ function targetPlaceholder(channel: MessageChannel) {
 function formatTime(value?: string) {
   if (!value) return "-";
   return new Date(value).toLocaleString();
+}
+
+function moveColumnKey(columns: string[], key: string, direction: "up" | "down"): string[] {
+  const index = columns.indexOf(key);
+  if (index < 0) return columns;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= columns.length) return columns;
+  const next = [...columns];
+  [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+  return next;
 }

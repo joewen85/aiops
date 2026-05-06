@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -10,7 +11,6 @@ import (
 	"devops-system/backend/internal/executor"
 	"devops-system/backend/internal/models"
 	"devops-system/backend/internal/response"
-	"devops-system/backend/internal/ws"
 )
 
 func (h *Handler) ListTasks(c *gin.Context) {
@@ -89,14 +89,26 @@ func (h *Handler) ExecuteTask(c *gin.Context) {
 		return
 	}
 
-	h.Hub.Publish(ws.Message{
-		Channel: "broadcast",
-		Title:   "Task Execution",
-		Content: "task execution finished",
+	severity := "success"
+	if result.ExitCode != 0 {
+		severity = "error"
+	}
+	_, _ = h.PublishNotification(NotificationOptions{
+		TraceID:      result.JobID,
+		Module:       "tasks",
+		Source:       "task-executor",
+		Event:        "task.execution.finished",
+		Severity:     severity,
+		ResourceType: "task",
+		ResourceID:   strconv.FormatUint(uint64(task.ID), 10),
+		Title:        "任务执行完成",
+		Content:      "任务 " + task.Name + " 执行状态：" + result.Status,
 		Data: gin.H{
-			"taskId": task.ID,
-			"jobId":  result.JobID,
-			"status": result.Status,
+			"taskId":     task.ID,
+			"jobId":      result.JobID,
+			"status":     result.Status,
+			"exitCode":   result.ExitCode,
+			"retryCount": retryCount,
 		},
 	})
 

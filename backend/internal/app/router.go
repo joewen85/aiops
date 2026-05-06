@@ -192,6 +192,8 @@ func registerMessageRoutes(r *gin.RouterGroup, h *handler.Handler) {
 	r.GET("/messages", h.ListMessages)
 	r.POST("/messages", h.CreateMessage)
 	r.POST("/messages/:id/read", h.MarkMessageRead)
+	r.GET("/messages/aiops/protocol", h.MessageAIOpsProtocol)
+	r.GET("/messages/aiops/context", h.MessageAIOpsContext)
 }
 
 func registerPhase2Routes(r *gin.RouterGroup, h *handler.Handler) {

@@ -421,6 +421,18 @@ func (h *Handler) MiddlewareAction(c *gin.Context) {
 		updates["error_message"] = "middleware action failed"
 		updates["result"] = datatypes.JSONMap{"message": "middleware action failed"}
 		_ = h.DB.Model(&models.MiddlewareOperation{}).Where("id = ?", operation.ID).Updates(updates).Error
+		_, _ = h.PublishNotification(NotificationOptions{
+			TraceID:      traceID,
+			Module:       "middleware",
+			Source:       "middleware-action",
+			Event:        "middleware.action.failed",
+			Severity:     "error",
+			ResourceType: instance.Type,
+			ResourceID:   strconv.FormatUint(uint64(instance.ID), 10),
+			Title:        "中间件动作失败",
+			Content:      instance.Name + " 执行 " + req.Action + " 失败",
+			Data:         gin.H{"instanceId": instance.ID, "operationId": operation.ID, "action": req.Action},
+		})
 		response.Error(c, http.StatusBadRequest, appErr.New(4024, "middleware action failed"))
 		return
 	}
@@ -435,6 +447,18 @@ func (h *Handler) MiddlewareAction(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
+	_, _ = h.PublishNotification(NotificationOptions{
+		TraceID:      traceID,
+		Module:       "middleware",
+		Source:       "middleware-action",
+		Event:        "middleware.action.success",
+		Severity:     "success",
+		ResourceType: instance.Type,
+		ResourceID:   strconv.FormatUint(uint64(instance.ID), 10),
+		Title:        "中间件动作完成",
+		Content:      instance.Name + " 已执行 " + req.Action,
+		Data:         gin.H{"instanceId": instance.ID, "operationId": operation.ID, "action": req.Action},
+	})
 	response.Success(c, gin.H{"protocolVersion": middlewareProtocolVersion, "traceId": traceID, "operation": saved})
 }
 

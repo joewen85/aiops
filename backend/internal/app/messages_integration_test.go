@@ -96,6 +96,71 @@ func TestMessagesRoleVisibilityAndReadReceiptIntegration(t *testing.T) {
 	}
 }
 
+func TestMessagesAIOpsContextAndModuleFiltersIntegration(t *testing.T) {
+	router, _, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	createRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/messages", adminToken, map[string]any{
+		"channel":      "broadcast",
+		"title":        "云资源同步完成",
+		"content":      "aws 云账号同步完成",
+		"module":       "cloud",
+		"source":       "cloud-sync",
+		"event":        "cloud.sync.success",
+		"severity":     "success",
+		"resourceType": "cloudSyncJob",
+		"resourceId":   "1",
+		"data": map[string]any{
+			"cloudAssets": 2,
+		},
+	})
+	createResp := assertOKResponse(t, createRec)
+	var created models.InAppMessage
+	if err := json.Unmarshal(createResp.Data, &created); err != nil {
+		t.Fatalf("unmarshal created message failed: %v", err)
+	}
+	if created.Module != "cloud" || created.Severity != "success" || created.Event != "cloud.sync.success" {
+		t.Fatalf("unexpected notification metadata: %+v", created)
+	}
+
+	listRec := sendJSONRequest(t, router, http.MethodGet, "/api/v1/messages?module=cloud&severity=success&page=1&pageSize=10", adminToken, nil)
+	listResp := assertOKResponse(t, listRec)
+	var listData listPayload[messageResponseForTest]
+	if err := json.Unmarshal(listResp.Data, &listData); err != nil {
+		t.Fatalf("unmarshal message list failed: %v", err)
+	}
+	if listData.Total != 1 || listData.List[0].Module != "cloud" {
+		t.Fatalf("expected one cloud notification, got %+v", listData)
+	}
+
+	protocolRec := sendJSONRequest(t, router, http.MethodGet, "/api/v1/messages/aiops/protocol", adminToken, nil)
+	protocolResp := assertOKResponse(t, protocolRec)
+	var protocolData struct {
+		ProtocolVersion string   `json:"protocolVersion"`
+		SupportedModule []string `json:"supportedModules"`
+	}
+	if err := json.Unmarshal(protocolResp.Data, &protocolData); err != nil {
+		t.Fatalf("unmarshal message protocol failed: %v", err)
+	}
+	if protocolData.ProtocolVersion == "" || len(protocolData.SupportedModule) == 0 {
+		t.Fatalf("unexpected message protocol: %+v", protocolData)
+	}
+
+	contextRec := sendJSONRequest(t, router, http.MethodGet, "/api/v1/messages/aiops/context?module=cloud&unreadOnly=true&limit=5", adminToken, nil)
+	contextResp := assertOKResponse(t, contextRec)
+	var contextData struct {
+		ProtocolVersion string                   `json:"protocolVersion"`
+		Total           int64                    `json:"total"`
+		Messages        []messageResponseForTest `json:"messages"`
+	}
+	if err := json.Unmarshal(contextResp.Data, &contextData); err != nil {
+		t.Fatalf("unmarshal aiops context failed: %v", err)
+	}
+	if contextData.Total != 1 || len(contextData.Messages) != 1 || contextData.Messages[0].Read {
+		t.Fatalf("expected one unread aiops context message, got %+v", contextData)
+	}
+}
+
 type messageResponseForTest struct {
 	models.InAppMessage
 	ReadAt string `json:"readAt"`

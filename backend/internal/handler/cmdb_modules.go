@@ -598,6 +598,21 @@ func (h *Handler) CreateCMDBSyncJob(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
+	_, _ = h.PublishNotification(NotificationOptions{
+		Module:       "cmdb",
+		Source:       "cmdb-sync",
+		Event:        "cmdb.sync." + status,
+		Severity:     syncStatusSeverity(status),
+		ResourceType: "cmdbSyncJob",
+		ResourceID:   strconv.FormatUint(uint64(job.ID), 10),
+		Title:        "CMDB 同步" + syncStatusTitle(status),
+		Content:      "CMDB 同步任务 #" + strconv.FormatUint(uint64(job.ID), 10) + " 状态：" + status,
+		Data: gin.H{
+			"jobId":   job.ID,
+			"status":  status,
+			"summary": summary,
+		},
+	})
 	response.Success(c, saved)
 }
 
@@ -688,7 +703,37 @@ func (h *Handler) RetryCMDBSyncJob(c *gin.Context) {
 		response.Internal(c, err)
 		return
 	}
+	_, _ = h.PublishNotification(NotificationOptions{
+		Module:       "cmdb",
+		Source:       "cmdb-sync",
+		Event:        "cmdb.sync.retry." + status,
+		Severity:     syncStatusSeverity(status),
+		ResourceType: "cmdbSyncJob",
+		ResourceID:   strconv.FormatUint(uint64(retryJob.ID), 10),
+		Title:        "CMDB 重试同步" + syncStatusTitle(status),
+		Content:      "CMDB 重试同步任务 #" + strconv.FormatUint(uint64(retryJob.ID), 10) + " 状态：" + status,
+		Data: gin.H{
+			"jobId":          retryJob.ID,
+			"retryFromJobId": id,
+			"status":         status,
+			"summary":        summary,
+		},
+	})
 	response.Success(c, saved)
+}
+
+func syncStatusSeverity(status string) string {
+	if strings.EqualFold(status, "success") {
+		return "success"
+	}
+	return "error"
+}
+
+func syncStatusTitle(status string) string {
+	if strings.EqualFold(status, "success") {
+		return "完成"
+	}
+	return "失败"
 }
 
 func (h *Handler) getResourceGraph(c *gin.Context, direction string) {
