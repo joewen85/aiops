@@ -127,8 +127,8 @@ function defaultHostForm(): HostForm {
     tlsEnable: false,
     env: "prod",
     owner: "",
-    labelsJSON: "{}",
-    metadataJSON: "{}",
+    labelsJSON: JSON.stringify({ app: "container-platform", tier: "runtime" }, null, 2),
+    metadataJSON: JSON.stringify({ apiVersion: "1.45", networkZone: "default", aiopsEnabled: true }, null, 2),
   };
 }
 
@@ -806,36 +806,130 @@ export function DockerPage() {
 
       {drawerVisible && (
         <div className="rbac-drawer-mask">
-          <aside className="rbac-drawer">
+          <aside className={`rbac-drawer ${stackDrawer ? "docker-drawer-wide" : ""}`}>
             <header className="rbac-drawer-header">
               <h3>{hostDrawer ? (hostEditId ? "编辑 Docker 主机" : "创建 Docker 主机") : (stackEditId ? "编辑 Compose Stack" : "创建 Compose Stack")}</h3>
               <button className="btn ghost cursor-pointer" type="button" onClick={closeDrawer}>关闭</button>
             </header>
             {hostDrawer && (
-              <form className="rbac-drawer-body form-grid" onSubmit={submitHost}>
-                <label>名称<input required value={hostForm.name} onChange={(event) => setHostForm((prev) => ({ ...prev, name: event.target.value }))} /></label>
-                <label>Endpoint<input required value={hostForm.endpoint} onChange={(event) => setHostForm((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="unix:///var/run/docker.sock 或 tcp://10.0.0.1:2376" /></label>
-                <label>环境<input value={hostForm.env} onChange={(event) => setHostForm((prev) => ({ ...prev, env: event.target.value }))} /></label>
-                <label>负责人<input value={hostForm.owner} onChange={(event) => setHostForm((prev) => ({ ...prev, owner: event.target.value }))} /></label>
-                <label className="docker-checkbox-label"><input type="checkbox" checked={hostForm.tlsEnable} onChange={(event) => setHostForm((prev) => ({ ...prev, tlsEnable: event.target.checked }))} />启用 TLS</label>
-                <label>Labels JSON<textarea value={hostForm.labelsJSON} onChange={(event) => setHostForm((prev) => ({ ...prev, labelsJSON: event.target.value }))} /></label>
-                <label>Metadata JSON<textarea value={hostForm.metadataJSON} onChange={(event) => setHostForm((prev) => ({ ...prev, metadataJSON: event.target.value }))} /></label>
-                <div className="rbac-row-actions">
+              <form className="rbac-drawer-body middleware-form" onSubmit={submitHost}>
+                <section className="middleware-form-section">
+                  <div className="middleware-form-section-title">
+                    <h4>主机基础信息</h4>
+                    <p className="muted">定义 Docker API 纳管对象，名称建议能体现环境、区域和用途。</p>
+                  </div>
+                  <div className="middleware-form-grid">
+                    <label className="middleware-form-field middleware-form-field-wide">
+                      <span>主机名称</span>
+                      <input required value={hostForm.name} placeholder="docker-prod-guangzhou-01" onChange={(event) => setHostForm((prev) => ({ ...prev, name: event.target.value }))} />
+                    </label>
+                    <label className="middleware-form-field">
+                      <span>环境</span>
+                      <input value={hostForm.env} placeholder="prod / staging / dev" onChange={(event) => setHostForm((prev) => ({ ...prev, env: event.target.value }))} />
+                    </label>
+                    <label className="middleware-form-field">
+                      <span>负责人</span>
+                      <input value={hostForm.owner} placeholder="SRE / 平台组" onChange={(event) => setHostForm((prev) => ({ ...prev, owner: event.target.value }))} />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="middleware-form-section">
+                  <div className="middleware-form-section-title">
+                    <h4>连接与安全</h4>
+                    <p className="muted">开发环境可使用本机 unix socket；生产环境建议使用 TLS 保护的 TCP Endpoint。</p>
+                  </div>
+                  <div className="middleware-form-grid">
+                    <label className="middleware-form-field middleware-form-field-wide">
+                      <span>Docker Endpoint</span>
+                      <input required value={hostForm.endpoint} onChange={(event) => setHostForm((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="unix:///var/run/docker.sock 或 tcp://10.0.0.1:2376" />
+                    </label>
+                    <label className="middleware-tls-card cursor-pointer middleware-form-field-wide">
+                      <input type="checkbox" checked={hostForm.tlsEnable} onChange={(event) => setHostForm((prev) => ({ ...prev, tlsEnable: event.target.checked }))} />
+                      <span>
+                        <strong>启用 TLS 连接</strong>
+                        <small>启用后后端按 TLS 模式访问 Docker API，证书能力后续可扩展到凭据模块。</small>
+                      </span>
+                    </label>
+                  </div>
+                </section>
+
+                <section className="middleware-form-section">
+                  <div className="middleware-form-section-title">
+                    <h4>标签与扩展元数据</h4>
+                    <p className="muted">用于列表筛选、AIOps 上下文和后续容量/安全策略编排。</p>
+                  </div>
+                  <div className="middleware-form-grid">
+                    <label className="middleware-form-field middleware-form-field-wide">
+                      <span>Labels JSON</span>
+                      <textarea className="middleware-json-editor" value={hostForm.labelsJSON} onChange={(event) => setHostForm((prev) => ({ ...prev, labelsJSON: event.target.value }))} />
+                    </label>
+                    <label className="middleware-form-field middleware-form-field-wide">
+                      <span>Metadata JSON</span>
+                      <textarea className="middleware-json-editor" value={hostForm.metadataJSON} onChange={(event) => setHostForm((prev) => ({ ...prev, metadataJSON: event.target.value }))} />
+                    </label>
+                  </div>
+                </section>
+
+                <div className="middleware-form-actions">
                   <button className="btn primary cursor-pointer" type="submit" disabled={hostSubmitting}>{hostSubmitting ? "保存中..." : "保存"}</button>
-                  <button className="btn cursor-pointer" type="button" onClick={closeDrawer}>取消</button>
+                  <button className="btn ghost cursor-pointer" type="button" onClick={closeDrawer}>取消</button>
                 </div>
               </form>
             )}
             {stackDrawer && (
-              <form className="rbac-drawer-body form-grid" onSubmit={submitStack}>
-                <label>主机<select required value={stackForm.hostId} onChange={(event) => setStackForm((prev) => ({ ...prev, hostId: event.target.value }))}>{hosts.list.map((host) => <option key={host.id} value={host.id}>{host.id} / {host.name}</option>)}</select></label>
-                <label>名称<input required value={stackForm.name} onChange={(event) => setStackForm((prev) => ({ ...prev, name: event.target.value }))} /></label>
-                <label>状态<input value={stackForm.status} onChange={(event) => setStackForm((prev) => ({ ...prev, status: event.target.value }))} /></label>
-                <label>服务数<input type="number" min="0" value={stackForm.services} onChange={(event) => setStackForm((prev) => ({ ...prev, services: event.target.value }))} /></label>
-                <label>Compose 内容<textarea className="docker-compose-editor" required value={stackForm.content} onChange={(event) => setStackForm((prev) => ({ ...prev, content: event.target.value }))} /></label>
-                <div className="rbac-row-actions">
+              <form className="rbac-drawer-body middleware-form" onSubmit={submitStack}>
+                <section className="middleware-form-section">
+                  <div className="middleware-form-section-title">
+                    <h4>Stack 基础信息</h4>
+                    <p className="muted">先保存 Compose 定义，部署/下线动作统一走 dry-run 和二次确认。</p>
+                  </div>
+                  <div className="middleware-form-grid">
+                    <label className="middleware-form-field middleware-form-field-wide">
+                      <span>目标主机</span>
+                      <select required value={stackForm.hostId} onChange={(event) => setStackForm((prev) => ({ ...prev, hostId: event.target.value }))}>
+                        <option value="">请选择 Docker 主机</option>
+                        {hosts.list.map((host) => <option key={host.id} value={host.id}>{host.id} / {host.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="middleware-form-field">
+                      <span>Stack 名称</span>
+                      <input required value={stackForm.name} placeholder="nginx-gateway" onChange={(event) => setStackForm((prev) => ({ ...prev, name: event.target.value }))} />
+                    </label>
+                    <label className="middleware-form-field">
+                      <span>状态</span>
+                      <select value={stackForm.status} onChange={(event) => setStackForm((prev) => ({ ...prev, status: event.target.value }))}>
+                        <option value="draft">draft</option>
+                        <option value="ready">ready</option>
+                        <option value="running">running</option>
+                        <option value="failed">failed</option>
+                      </select>
+                    </label>
+                    <label className="middleware-form-field">
+                      <span>服务数</span>
+                      <input type="number" min="0" value={stackForm.services} onChange={(event) => setStackForm((prev) => ({ ...prev, services: event.target.value }))} />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="middleware-form-section docker-compose-section">
+                  <div className="middleware-form-section-title">
+                    <h4>Compose 内容</h4>
+                    <p className="muted">支持标准 Compose YAML。保存不会直接部署，部署需在列表操作中执行 dry-run 后确认。</p>
+                  </div>
+                  <label className="middleware-form-field middleware-form-field-wide">
+                    <span>docker-compose.yml</span>
+                    <textarea className="docker-compose-editor docker-compose-editor-large" required value={stackForm.content} onChange={(event) => setStackForm((prev) => ({ ...prev, content: event.target.value }))} />
+                  </label>
+                  <div className="docker-form-tip">
+                    <strong>安全提示</strong>
+                    <span>生产部署前请检查端口暴露、镜像 tag、挂载路径、环境变量和密钥来源。</span>
+                  </div>
+                </section>
+
+                <div className="middleware-form-actions">
                   <button className="btn primary cursor-pointer" type="submit" disabled={stackSubmitting}>{stackSubmitting ? "保存中..." : "保存"}</button>
-                  <button className="btn cursor-pointer" type="button" onClick={closeDrawer}>取消</button>
+                  <button className="btn ghost cursor-pointer" type="button" onClick={closeDrawer}>取消</button>
                 </div>
               </form>
             )}

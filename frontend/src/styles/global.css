@@ -668,6 +668,38 @@ h4 {
   font-family: "SFMono-Regular", Consolas, monospace;
 }
 
+.docker-drawer-wide {
+  width: min(760px, 100vw);
+}
+
+.docker-compose-section {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 7%, transparent), transparent 38%),
+    color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.docker-compose-editor-large {
+  min-height: 360px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.docker-form-tip {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.docker-form-tip strong {
+  white-space: nowrap;
+}
+
 .docker-aiops-card {
   gap: 10px;
 }
@@ -797,6 +829,19 @@ h4 {
   border-top: 1px solid var(--border);
   padding: 12px 0 0;
   background: var(--bg-elevated);
+}
+
+.ticket-title-cell {
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ticket-detail-stack {
+  display: grid;
+  gap: 14px;
 }
 
 .rbac-binding-actions {

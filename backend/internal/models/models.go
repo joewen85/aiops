@@ -207,10 +207,103 @@ type CloudSyncJob struct {
 
 type Ticket struct {
 	BaseModel
-	Title       string `gorm:"size:255;not null" json:"title"`
-	Description string `gorm:"type:text" json:"description"`
-	Status      string `gorm:"size:32;index;default:pending" json:"status"`
-	Priority    string `gorm:"size:32;default:medium" json:"priority"`
+	TicketNo     string            `gorm:"size:64;index" json:"ticketNo"`
+	Title        string            `gorm:"size:255;not null" json:"title"`
+	Description  string            `gorm:"type:text" json:"description"`
+	Type         string            `gorm:"size:64;index;default:event" json:"type"`
+	Status       string            `gorm:"size:32;index;default:draft" json:"status"`
+	Priority     string            `gorm:"size:16;index;default:P3" json:"priority"`
+	Severity     string            `gorm:"size:16;index;default:P3" json:"severity"`
+	RequesterID  uint              `gorm:"index" json:"requesterId"`
+	AssigneeID   uint              `gorm:"index" json:"assigneeId"`
+	DepartmentID uint              `gorm:"index" json:"departmentId"`
+	Env          string            `gorm:"size:32;index;default:prod" json:"env"`
+	SLADueAt     *time.Time        `gorm:"index" json:"slaDueAt,omitempty"`
+	DueAt        *time.Time        `gorm:"index" json:"dueAt,omitempty"`
+	ResolvedAt   *time.Time        `gorm:"index" json:"resolvedAt,omitempty"`
+	ClosedAt     *time.Time        `gorm:"index" json:"closedAt,omitempty"`
+	Tags         datatypes.JSONMap `gorm:"type:jsonb" json:"tags"`
+	Metadata     datatypes.JSONMap `gorm:"type:jsonb" json:"metadata"`
+}
+
+type TicketFlow struct {
+	BaseModel
+	TicketID   uint   `gorm:"index;not null" json:"ticketId"`
+	FromStatus string `gorm:"size:32;index" json:"fromStatus"`
+	ToStatus   string `gorm:"size:32;index;not null" json:"toStatus"`
+	Action     string `gorm:"size:64;index;not null" json:"action"`
+	OperatorID uint   `gorm:"index" json:"operatorId"`
+	Comment    string `gorm:"type:text" json:"comment"`
+}
+
+type TicketApproval struct {
+	BaseModel
+	TicketID     uint       `gorm:"index;not null" json:"ticketId"`
+	NodeKey      string     `gorm:"size:64;index;default:default" json:"nodeKey"`
+	ApproverID   uint       `gorm:"index" json:"approverId"`
+	ApprovalType string     `gorm:"size:32;default:or" json:"approvalType"`
+	Status       string     `gorm:"size:32;index;default:pending" json:"status"`
+	Comment      string     `gorm:"type:text" json:"comment"`
+	ApprovedAt   *time.Time `gorm:"index" json:"approvedAt,omitempty"`
+	RejectedAt   *time.Time `gorm:"index" json:"rejectedAt,omitempty"`
+}
+
+type TicketComment struct {
+	BaseModel
+	TicketID    uint              `gorm:"index;not null" json:"ticketId"`
+	UserID      uint              `gorm:"index" json:"userId"`
+	Content     string            `gorm:"type:text;not null" json:"content"`
+	Internal    bool              `gorm:"index;default:false" json:"internal"`
+	Attachments datatypes.JSONMap `gorm:"type:jsonb" json:"attachments"`
+}
+
+type TicketLink struct {
+	BaseModel
+	TicketID   uint              `gorm:"index;not null" json:"ticketId"`
+	LinkType   string            `gorm:"size:64;index;not null" json:"linkType"`
+	LinkID     string            `gorm:"size:128;index;not null" json:"linkId"`
+	LinkName   string            `gorm:"size:255" json:"linkName"`
+	LinkModule string            `gorm:"size:64;index" json:"linkModule"`
+	Relation   string            `gorm:"size:64;index;default:related" json:"relation"`
+	Metadata   datatypes.JSONMap `gorm:"type:jsonb" json:"metadata"`
+}
+
+type TicketAttachment struct {
+	BaseModel
+	TicketID    uint   `gorm:"index;not null" json:"ticketId"`
+	FileName    string `gorm:"size:255;not null" json:"fileName"`
+	FileSize    int64  `gorm:"index" json:"fileSize"`
+	ContentType string `gorm:"size:128" json:"contentType"`
+	StorageKey  string `gorm:"size:512;not null" json:"storageKey"`
+	UploaderID  uint   `gorm:"index" json:"uploaderId"`
+	Checksum    string `gorm:"size:128;index" json:"checksum"`
+}
+
+type TicketTemplate struct {
+	BaseModel
+	Type            string            `gorm:"size:64;index;not null" json:"type"`
+	Name            string            `gorm:"size:128;index;not null" json:"name"`
+	Description     string            `gorm:"type:text" json:"description"`
+	FormSchema      datatypes.JSONMap `gorm:"type:jsonb" json:"formSchema"`
+	DefaultPriority string            `gorm:"size:16;default:P3" json:"defaultPriority"`
+	DefaultFlow     datatypes.JSONMap `gorm:"type:jsonb" json:"defaultFlow"`
+	Enabled         bool              `gorm:"index;default:true" json:"enabled"`
+}
+
+type TicketOperation struct {
+	BaseModel
+	TraceID      string            `gorm:"size:64;index;not null" json:"traceId"`
+	TicketID     uint              `gorm:"index;not null" json:"ticketId"`
+	Module       string            `gorm:"size:64;index;not null" json:"module"`
+	Action       string            `gorm:"size:64;index;not null" json:"action"`
+	DryRun       bool              `gorm:"index;default:true" json:"dryRun"`
+	Status       string            `gorm:"size:32;index;not null" json:"status"`
+	RiskLevel    string            `gorm:"size:16;index;default:P2" json:"riskLevel"`
+	Request      datatypes.JSONMap `gorm:"type:jsonb" json:"request"`
+	Result       datatypes.JSONMap `gorm:"type:jsonb" json:"result"`
+	ErrorMessage string            `gorm:"type:text" json:"errorMessage"`
+	StartedAt    *time.Time        `gorm:"index" json:"startedAt,omitempty"`
+	FinishedAt   *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
 }
 
 type Event struct {
@@ -427,6 +520,13 @@ func AutoMigrateModels() []interface{} {
 		&CloudAsset{},
 		&CloudSyncJob{},
 		&Ticket{},
+		&TicketFlow{},
+		&TicketApproval{},
+		&TicketComment{},
+		&TicketLink{},
+		&TicketAttachment{},
+		&TicketTemplate{},
+		&TicketOperation{},
 		&Event{},
 		&InAppMessage{},
 		&MessageReadReceipt{},

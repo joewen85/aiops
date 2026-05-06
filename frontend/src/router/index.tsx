@@ -13,6 +13,7 @@ import { MessagesPage } from "@/pages/MessagesPage";
 import { MiddlewarePage } from "@/pages/MiddlewarePage";
 import { ModulePage } from "@/pages/ModulePage";
 import { RBACPage } from "@/pages/RBACPage";
+import { TicketsPage } from "@/pages/TicketsPage";
 import { UsersPage } from "@/pages/UsersPage";
 
 function withMenuGuard(permissionKey: string, element: ReactElement) {
@@ -36,7 +37,7 @@ export const router = createBrowserRouter([
           { path: "tasks", element: withMenuGuard("menu.tasks", <ModulePage />) },
           { path: "messages", element: withMenuGuard("menu.messages", <MessagesPage />) },
           { path: "cloud", element: withMenuGuard("menu.cloud", <CloudPage />) },
-          { path: "tickets", element: withMenuGuard("menu.tickets", <ModulePage />) },
+          { path: "tickets", element: withMenuGuard("menu.tickets", <TicketsPage />) },
           { path: "docker", element: withMenuGuard("menu.docker", <DockerPage />) },
           { path: "middleware", element: withMenuGuard("menu.middleware", <MiddlewarePage />) },
           { path: "observability", element: withMenuGuard("menu.observability", <ModulePage />) },

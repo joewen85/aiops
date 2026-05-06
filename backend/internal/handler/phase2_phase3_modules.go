@@ -549,42 +549,6 @@ func parseVerboseQuery(raw string) bool {
 	}
 }
 
-func (h *Handler) ListTickets(c *gin.Context)  { listByModel[models.Ticket](c, h.DB) }
-func (h *Handler) GetTicket(c *gin.Context)    { getByID[models.Ticket](c, h.DB) }
-func (h *Handler) CreateTicket(c *gin.Context) { createByModel[models.Ticket](c, h.DB) }
-func (h *Handler) UpdateTicket(c *gin.Context) { updateByModel[models.Ticket](c, h.DB) }
-func (h *Handler) DeleteTicket(c *gin.Context) { deleteByModel[models.Ticket](c, h.DB) }
-
-func (h *Handler) TransitionTicket(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	var req struct {
-		Status string `json:"status" binding:"required"`
-	}
-	if !bindJSON(c, &req) {
-		return
-	}
-	if err := h.DB.Model(&models.Ticket{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
-		response.Internal(c, err)
-		return
-	}
-	getByID[models.Ticket](c, h.DB)
-}
-
-func (h *Handler) ApproveTicket(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	if err := h.DB.Model(&models.Ticket{}).Where("id = ?", id).Update("status", "processing").Error; err != nil {
-		response.Internal(c, err)
-		return
-	}
-	response.Success(c, gin.H{"id": id, "approved": true})
-}
-
 func parseCloudAccountVerifiedQuery(raw string) (bool, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "true", "yes":

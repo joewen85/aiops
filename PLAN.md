@@ -102,10 +102,73 @@
   - 模块需要适配aiops,为后面的aiops自然语言购买资料预留支持协议和接口
 
 ### 5) 工单管理
-- 功能点：工单创建、流转、审批、状态跟踪、关联资产/任务。
-- 数据模型：`tickets`、`ticket_flows`、`ticket_approvals`、`ticket_links`。
-- 接口清单：`/tickets` CRUD、`POST /tickets/:id/approve`、`POST /tickets/:id/transition`。
-- 技术要点与验收：状态机（pending/processing/resolved/closed）；审批节点可配置；验收=工单全流程闭环并可审计追踪。
+- 功能点：
+  - 工单生命周期：创建、编辑、提交、受理、处理中、待审批、已解决、已关闭、驳回、取消、重开。
+  - 工单类型：事件工单、变更工单、发布工单、资源申请、权限申请、故障处理、服务请求；支持后续扩展自定义类型。
+  - 工单优先级与 SLA：支持 `P0/P1/P2/P3/P4`、期望完成时间、SLA 截止时间、超时标记、超时升级。
+  - 流转与审批：支持可配置状态机、审批节点、多人会签/或签、审批意见、驳回原因、转派、加签、撤回。
+  - 关联对象：可关联 CMDB CI、云资源、Docker 主机/容器/Stack、中间件实例、任务执行、事件、发布、附件与评论。
+  - 协作记录：支持评论、内部备注、处理日志、状态变更历史、操作审计、附件上传元信息。
+  - 通知打通：工单创建、指派、审批、驳回、超时、关闭、重开等事件必须接入站内消息统一通知底座。
+  - 执行动作：变更/发布/资源申请类工单审批通过后，可触发任务中心、多云管理、Docker、中间件等模块的 dry-run 或真实执行入口。
+- 数据模型：
+  - `tickets`：工单主体，字段包含 `ticket_no/title/type/status/priority/severity/requester_id/assignee_id/department_id/env/sla_due_at/due_at/resolved_at/closed_at/tags/metadata`。
+  - `ticket_flows`：状态流转记录，包含 `ticket_id/from_status/to_status/action/operator_id/comment/created_at`。
+  - `ticket_approvals`：审批任务，包含 `ticket_id/node_key/approver_id/approval_type/status/comment/approved_at/rejected_at`。
+  - `ticket_comments`：评论与内部备注，包含 `ticket_id/user_id/content/internal/attachments/created_at`。
+  - `ticket_links`：关联对象，包含 `ticket_id/link_type/link_id/link_name/link_module/relation/metadata`。
+  - `ticket_attachments`：附件元信息，包含 `ticket_id/file_name/file_size/content_type/storage_key/uploader_id/checksum`。
+  - `ticket_templates`：工单模板，包含 `type/name/description/form_schema/default_priority/default_flow/enabled`。
+  - `ticket_operations`：审批后触发的执行任务，保存 `trace_id/ticket_id/module/action/dry_run/status/request/result/error_message`。
+- 接口清单：
+  - 工单基础：`GET/POST /tickets`、`GET/PUT/DELETE /tickets/:id`、`POST /tickets/:id/submit`、`POST /tickets/:id/cancel`、`POST /tickets/:id/reopen`。
+  - 流转：`POST /tickets/:id/transition`、`GET /tickets/:id/flows`、`GET /tickets/:id/timeline`。
+  - 审批：`GET /tickets/:id/approvals`、`POST /tickets/:id/approve`、`POST /tickets/:id/reject`、`POST /tickets/:id/transfer`、`POST /tickets/:id/add-approver`。
+  - 评论附件：`GET/POST /tickets/:id/comments`、`POST /tickets/:id/attachments`、`GET /tickets/:id/attachments`。
+  - 关联对象：`GET/POST/DELETE /tickets/:id/links`，支持关联 CMDB、云资源、Docker、中间件、事件、任务。
+  - 模板配置：`GET/POST/PUT/DELETE /ticket-templates`。
+  - 执行入口：`POST /tickets/:id/operations/dry-run`、`POST /tickets/:id/operations/execute`、`GET /tickets/:id/operations`。
+  - AIOps 协议：`GET /tickets/aiops/protocol`、`POST /tickets/aiops/intents`、`POST /tickets/aiops/dry-run`。
+- 安全性关键指标：
+  - 权限控制：所有工单接口接入 RBAC/ABAC，按部门、申请人、处理人、审批人、环境、优先级、工单类型控制访问。
+  - 数据隔离：普通用户只能查看自己创建、参与、被指派、可审批或本部门授权范围内的工单。
+  - 审批防绕过：状态流转必须由后端状态机校验，禁止前端直接传任意目标状态绕过审批。
+  - 高危动作保护：涉及生产变更、删除、重启、停止、权限提升、资源采购等高危操作必须先审批，再通过 dry-run 返回影响范围，真实执行需二次确认。
+  - 附件安全：限制文件大小、类型、数量；附件需校验 checksum，禁止直接公开对象存储地址，下载需鉴权。
+  - 敏感信息脱敏：评论、附件元信息、执行结果、错误信息返回前需脱敏 AK/SK、Token、密码、证书、连接串。
+  - 审计要求：所有 `create/update/delete/submit/approve/reject/transition/transfer/execute/reopen` 必须写审计和工单 timeline。
+- 稳定性关键指标：
+  - 状态机幂等：重复提交、重复审批、重复关闭等请求必须返回稳定结果，不应造成多条重复流转。
+  - 并发控制：同一工单的审批、流转、执行动作需使用事务与锁，避免并发审批导致状态错乱。
+  - 通知可靠性：工单通知写入站内消息失败不能阻断核心工单状态变更，但必须记录告警日志与审计。
+  - SLA 任务：SLA 检查需异步任务化，支持超时标记、升级通知、失败重试。
+  - 执行任务化：审批后触发的外部动作必须记录 `ticket_operations`，支持 dry-run、执行中、成功、失败、重试与追踪。
+  - 回滚与补偿：执行失败需保存失败原因、回滚建议、补偿入口；不可回滚动作必须在 dry-run 中明确提示。
+- 性能关键指标：
+  - 列表分页：所有列表默认分页 10 条，支持自定义 pageSize；服务端支持关键字、类型、状态、优先级、处理人、申请人、部门、时间范围过滤。
+  - 索引设计：`status/type/priority/requester_id/assignee_id/department_id/sla_due_at/created_at` 建索引，保证大批量工单下列表可用。
+  - 时间线按需加载：工单列表只展示摘要，评论、附件、审批、流转明细在详情抽屉按需加载。
+  - 附件处理：大附件不进入数据库；只保存元信息与对象存储 key。
+  - 通知降噪：批量流转或系统任务产生大量工单事件时，支持合并通知和频率限制。
+- UI/UX 约束：
+  - 工单列表遵循项目统一紧凑型搜索栏，标题、搜索栏、列表间距保持紧凑。
+  - 创建/编辑工单使用右侧抽屉，不使用页面中部弹窗；表单按基础信息、影响范围、审批信息、关联对象分组。
+  - 列表字段支持自定义显示与位置编排，字段设置入口放在“操作”表头右侧并使用 `⚙️`。
+  - 列表操作超过 3 个时使用 `...` 展示更多操作，弹层根据 `...` 位置向下展开并避免越界。
+  - 删除、取消、关闭、驳回、执行等高影响操作需二次确认；删除类确认文案统一为“确认删除资源”，输入框禁止粘贴。
+  - 工单详情使用右侧抽屉或详情页，必须展示基础信息、状态流、审批记录、评论、关联对象、操作记录与审计 traceId。
+- AIOps 预留：
+  - 提供 `GET /tickets/aiops/protocol`，返回工单类型、字段 Schema、状态机动作、审批要求、可触发执行模块、风险等级与 dry-run 支持。
+  - AIOps 自然语言创建工单流程：自然语言意图解析 -> 工单草稿 -> dry-run 校验影响范围 -> 用户确认 -> 创建工单或提交审批。
+  - AIOps 读取上下文：可读取当前用户可见工单、审批待办、超时风险、关联通知和操作记录，用于自然语言查询“我有哪些待处理工单/哪些变更卡住了”。
+  - AIOps 执行约束：模型不得直接改状态或执行外部动作，只能调用后端协议白名单；高危动作必须经审批和二次确认。
+  - 操作结果必须返回 `traceId/ticketId/operationId/status/riskLevel/approvalRequired/rollback/safetyChecks`，便于 AIOps 解释与追踪。
+- 技术要点与验收：
+  - 状态机建议：`draft -> submitted -> assigned -> processing -> pending_approval -> approved/rejected -> resolved -> closed`，支持 `cancel/reopen/transfer` 分支。
+  - 首批模板：事件处理、生产变更、资源申请、权限申请、故障复盘。
+  - 与站内消息打通：工单关键事件必须产生 `module=tickets` 的站内通知，并支持 AIOps 消息上下文读取。
+  - 与任务中心打通：审批通过后可创建任务执行记录，执行结果回写工单 timeline。
+  - 验收=工单可创建、查询、流转、审批、评论、关联资源、通知、审计；高危工单具备 dry-run、审批、二次确认和操作追踪闭环。
 
 ### 6) Docker 管理
 - 功能点：
