@@ -174,10 +174,63 @@
   - 验收=Docker 主机可纳管并通过 TLS 校验；容器/镜像/网络/数据卷/Compose 可分页查询、按条件搜索、查看详情；关键写操作可执行、可审计、可防误删；异常主机不会拖垮整体列表与同步任务。
 
 ### 7) 中间件管理
-- 功能点：中间件实例纳管、连接健康检查、常用运维动作。
-- 数据模型：`middleware_instances`、`middleware_metrics`、`middleware_operations`。
-- 接口清单：`/middleware/instances`、`POST /middleware/instances/:id/check`、`POST /middleware/instances/:id/action`。
-- 技术要点与验收：插件式驱动（Redis/PostgreSQL/RabbitMQ）；验收=实例可纳管、可检测、可执行基础动作。
+- 功能点：
+  - 中间件实例纳管：首批支持 Redis、PostgreSQL、RabbitMQ；后续按插件扩展 MySQL、MongoDB、Kafka、Elasticsearch、Nacos、Consul 等。
+  - 实例信息维护：名称、类型、Endpoint、环境、负责人、标签、版本、部署形态、认证方式、TLS 状态、健康状态、最后检查时间。
+  - 连接健康检查：按中间件类型执行轻量探活，返回连通性、版本、角色、延迟、错误码、trace_id；失败详情仅写服务端日志。
+  - 基础指标采集：连接数、内存/存储使用、QPS/TPS、慢查询/阻塞、队列堆积、复制延迟、主从/集群状态等关键指标。
+  - 常用运维动作：Redis flush/dbsize/info、PostgreSQL 连接终止/慢查询查看、RabbitMQ 队列查看/purge/requeue 等；高危动作默认 dry-run。
+  - 操作审计：所有写操作记录操作者、实例、动作、参数摘要、风险等级、dry-run、执行结果、耗时、错误码、trace_id。
+- 数据模型：
+  - `middleware_instances`：实例基础信息、类型、Endpoint、环境、负责人、标签、认证方式、TLS 状态、健康状态、版本、最后检查时间。
+  - `middleware_credentials`：凭据密文、证书密文引用、密钥版本、轮换时间；接口禁止回显明文。
+  - `middleware_metrics`：指标快照、指标类型、采样时间、实例 ID、关键数值、原始摘要。
+  - `middleware_operations`：操作任务、trace_id、动作、参数摘要、dry-run、状态、风险等级、审批状态、结果摘要、失败原因。
+  - `middleware_operation_logs`：操作执行日志、步骤、输出脱敏内容、耗时、错误码。
+- 接口清单：
+  - 实例：`GET/POST /middleware/instances`、`GET/PUT/DELETE /middleware/instances/:id`、`POST /middleware/instances/:id/check`。
+  - 指标：`GET /middleware/instances/:id/metrics`、`POST /middleware/instances/:id/metrics/collect`。
+  - 动作：`POST /middleware/actions`，统一承载 `{instanceId, type, action, dryRun, confirmationText, params}`。
+  - 操作记录：`GET /middleware/operations`、`GET /middleware/operations/:id`。
+  - AIOps 协议：`GET /middleware/aiops/protocol`，返回支持类型、动作、参数 Schema、风险等级、dry-run、审批与回滚要求。
+- 安全性关键指标：
+  - 权限控制：实例查看、凭据维护、健康检查、指标采集、写操作均需接入 RBAC/ABAC；高危动作需独立权限点。
+  - 凭据安全：用户名、密码、Token、证书、私钥必须加密存储；接口、日志、审计、前端均禁止回显明文。
+  - Endpoint 防护：新增实例需校验协议、地址、端口和类型匹配，禁止 SSRF、metadata 地址、非法本地 Socket、生产环境明文高危连接。
+  - TLS 策略：生产环境优先 TLS；允许非 TLS 时必须标记风险并记录审计，后续可接入策略强制。
+  - 高危确认：删除实例、清空数据、清空队列、终止连接、批量变更等动作必须二次确认，输入“确认删除资源”后才能执行，输入框禁止粘贴。
+  - 动作白名单：所有中间件动作必须来自后端协议白名单，禁止前端透传任意命令、SQL、Lua、Shell。
+  - 输出脱敏：慢查询、连接信息、错误堆栈、配置项输出必须脱敏密码、Token、DSN、证书内容。
+- 稳定性关键指标：
+  - 超时控制：连接、健康检查、指标采集、动作执行必须设置独立超时和上下文取消，避免接口线程长期阻塞。
+  - 幂等与锁：同一实例的高危动作需使用幂等键和分布式锁，避免并发 flush/purge/restart 等冲突。
+  - dry-run 优先：所有写操作默认 dry-run；真实执行必须显式 `dryRun=false`，高危动作还需确认文案和权限。
+  - 重试策略：仅对网络抖动、临时连接失败做有限重试和指数退避；认证失败、参数错误、权限不足不重试。
+  - 熔断降级：连续探活失败实例进入异常状态，降低自动采集频率，避免对故障中间件造成额外压力。
+  - 操作任务化：耗时动作和批量采集进入异步任务，前端通过操作记录轮询状态。
+  - 回滚提示：支持可回滚动作需记录回滚建议；不可回滚动作必须在 dry-run 中明确提示。
+- 性能关键指标：
+  - 分页与过滤：所有列表默认分页 10 条，支持自定义 pageSize；服务端支持类型、环境、状态、负责人、关键词过滤。
+  - 指标采样：指标采集需限制频率、并发和保留周期；列表只展示摘要，详情按需加载。
+  - 连接复用：可复用安全连接池，但需按实例、凭据版本、TLS 配置隔离；连接池设置最大连接数和空闲超时。
+  - 并发控制：按实例和全局限制健康检查、指标采集、动作执行并发；避免批量操作压垮中间件。
+  - 大结果限制：慢查询、队列消息、连接列表、日志输出必须支持 limit/offset/tail，禁止默认全量拉取。
+  - 缓存策略：健康状态和指标摘要支持短 TTL 缓存，手动刷新可绕过缓存。
+- UI/UX 约束：
+  - 页面遵循项目统一紧凑型搜索栏，标题、搜索栏、列表间距保持紧凑。
+  - 创建/编辑中间件实例使用右侧抽屉，不使用页面中部弹窗。
+  - 列表字段支持自定义显示，字段配置按用户维度保存。
+  - 操作按钮超过 3 个时使用 `...` 展示更多操作，弹层根据 `...` 位置向下展开并避免越界。
+  - 删除和高危动作统一使用强确认弹窗，输入“确认删除资源”后才能执行，输入框禁止粘贴。
+- AIOps 预留：
+  - 提供 `GET /middleware/aiops/protocol`，返回协议版本、支持中间件类型、动作清单、参数 Schema、风险等级、是否需要审批、是否支持 dry-run、回滚提示。
+  - 统一动作入口 `POST /middleware/actions`，AIOpsChat 后续只需组装 `{instanceId, type, action, dryRun, params, confirmationText}` 即可复用权限、审计、dry-run、操作记录链路。
+  - dry-run 返回必须包含 `steps/impact/riskLevel/approvalRequired/rollback/safetyChecks/estimatedDuration`，用于自然语言执行前确认影响范围。
+  - 操作记录 `middleware_operations` 必须保存 `trace_id/request/result/status/error_message`，便于 AIOps 追踪、解释失败原因和生成补偿建议。
+  - AIOps 自然语言动作只允许映射到后端协议白名单，禁止模型生成任意 SQL/Lua/Shell 直接执行。
+- 技术要点与验收：
+  - 工程实现需抽象 Middleware Driver、HealthChecker、MetricCollector、ActionExecutor、CredentialProvider，避免 Redis/PostgreSQL/RabbitMQ 各自重复鉴权、审计、锁、重试、脱敏。
+  - 验收=Redis/PostgreSQL/RabbitMQ 至少可完成实例纳管、健康检查、指标摘要查询、dry-run、低风险动作执行和操作审计；高危动作具备权限、确认、审计、回滚提示和测试覆盖。
 
 ### 8) 可观测性
 - 功能点：指标查询、告警视图、日志链路入口。

@@ -291,10 +291,66 @@ type DockerOperation struct {
 
 type MiddlewareInstance struct {
 	BaseModel
-	Name       string `gorm:"size:128;not null" json:"name"`
-	Type       string `gorm:"size:64;not null" json:"type"`
-	Endpoint   string `gorm:"size:255;not null" json:"endpoint"`
-	HealthPath string `gorm:"size:255" json:"healthPath"`
+	Name          string            `gorm:"size:128;not null" json:"name"`
+	Type          string            `gorm:"size:64;index;not null" json:"type"`
+	Endpoint      string            `gorm:"size:255;not null" json:"endpoint"`
+	HealthPath    string            `gorm:"size:255" json:"healthPath"`
+	Env           string            `gorm:"size:32;index;default:prod" json:"env"`
+	Owner         string            `gorm:"size:128;index" json:"owner"`
+	AuthType      string            `gorm:"size:32;default:password" json:"authType"`
+	TLSEnable     bool              `gorm:"default:false" json:"tlsEnable"`
+	Status        string            `gorm:"size:32;index;default:unknown" json:"status"`
+	Version       string            `gorm:"size:128" json:"version"`
+	Labels        datatypes.JSONMap `gorm:"type:jsonb" json:"labels"`
+	Metadata      datatypes.JSONMap `gorm:"type:jsonb" json:"metadata"`
+	LastCheckedAt *time.Time        `gorm:"index" json:"lastCheckedAt,omitempty"`
+}
+
+type MiddlewareCredential struct {
+	BaseModel
+	InstanceID uint       `gorm:"uniqueIndex;not null" json:"instanceId"`
+	Username   string     `gorm:"size:255" json:"-"`
+	Password   string     `gorm:"size:1024" json:"-"`
+	Token      string     `gorm:"size:1024" json:"-"`
+	TLSCert    string     `gorm:"type:text" json:"-"`
+	TLSKey     string     `gorm:"type:text" json:"-"`
+	KeyVersion string     `gorm:"size:32;default:v1" json:"keyVersion"`
+	RotatedAt  *time.Time `gorm:"index" json:"rotatedAt,omitempty"`
+}
+
+type MiddlewareMetric struct {
+	BaseModel
+	InstanceID  uint              `gorm:"index;not null" json:"instanceId"`
+	MetricType  string            `gorm:"size:64;index;not null" json:"metricType"`
+	Value       float64           `json:"value"`
+	Unit        string            `gorm:"size:32" json:"unit"`
+	Data        datatypes.JSONMap `gorm:"type:jsonb" json:"data"`
+	CollectedAt time.Time         `gorm:"index" json:"collectedAt"`
+}
+
+type MiddlewareOperation struct {
+	BaseModel
+	TraceID      string            `gorm:"size:64;index;not null" json:"traceId"`
+	InstanceID   uint              `gorm:"index;not null" json:"instanceId"`
+	Type         string            `gorm:"size:64;index;not null" json:"type"`
+	Action       string            `gorm:"size:64;index;not null" json:"action"`
+	Status       string            `gorm:"size:32;index;not null" json:"status"`
+	DryRun       bool              `gorm:"index;default:true" json:"dryRun"`
+	RiskLevel    string            `gorm:"size:16;index;default:P2" json:"riskLevel"`
+	Request      datatypes.JSONMap `gorm:"type:jsonb" json:"request"`
+	Result       datatypes.JSONMap `gorm:"type:jsonb" json:"result"`
+	ErrorMessage string            `gorm:"type:text" json:"errorMessage"`
+	StartedAt    *time.Time        `gorm:"index" json:"startedAt,omitempty"`
+	FinishedAt   *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
+}
+
+type MiddlewareOperationLog struct {
+	BaseModel
+	OperationID uint              `gorm:"index;not null" json:"operationId"`
+	Step        string            `gorm:"size:128;index" json:"step"`
+	Output      string            `gorm:"type:text" json:"output"`
+	Data        datatypes.JSONMap `gorm:"type:jsonb" json:"data"`
+	DurationMS  int64             `json:"durationMs"`
 }
 
 type ObservabilitySource struct {
@@ -373,6 +429,10 @@ func AutoMigrateModels() []interface{} {
 		&DockerComposeStack{},
 		&DockerOperation{},
 		&MiddlewareInstance{},
+		&MiddlewareCredential{},
+		&MiddlewareMetric{},
+		&MiddlewareOperation{},
+		&MiddlewareOperationLog{},
 		&ObservabilitySource{},
 		&KubernetesCluster{},
 		&AIAgentConfig{},

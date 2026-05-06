@@ -12,6 +12,7 @@ interface TableSettingsModalProps {
   columns: TableSettingsColumn[];
   visibleColumnKeys: string[];
   onToggleColumn: (columnKey: string) => void;
+  onMoveColumn?: (columnKey: string, direction: "up" | "down") => void;
   onReset: () => void;
   onClose: () => void;
   extraContent?: ReactNode;
@@ -24,6 +25,7 @@ export function TableSettingsModal(props: TableSettingsModalProps) {
     columns,
     visibleColumnKeys,
     onToggleColumn,
+    onMoveColumn,
     onReset,
     onClose,
     extraContent,
@@ -61,6 +63,41 @@ export function TableSettingsModal(props: TableSettingsModalProps) {
               })}
             </div>
           </div>
+
+          {onMoveColumn ? (
+            <div className="table-settings-section">
+              <h5>字段顺序</h5>
+              <div className="table-settings-order-list">
+                {visibleColumnKeys.map((columnKey, index) => {
+                  const column = columns.find((item) => item.key === columnKey);
+                  if (!column) return null;
+                  return (
+                    <div className="table-settings-order-item" key={column.key}>
+                      <span>{column.label}</span>
+                      <div className="table-settings-order-actions">
+                        <button
+                          className="btn ghost cursor-pointer"
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() => onMoveColumn(column.key, "up")}
+                        >
+                          上移
+                        </button>
+                        <button
+                          className="btn ghost cursor-pointer"
+                          type="button"
+                          disabled={index === visibleColumnKeys.length - 1}
+                          onClick={() => onMoveColumn(column.key, "down")}
+                        >
+                          下移
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {extraContent}
         </div>

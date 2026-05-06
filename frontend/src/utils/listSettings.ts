@@ -43,12 +43,18 @@ export function sanitizeVisibleColumnKeys(
     ? visibleColumnKeys.filter((item): item is string => typeof item === "string" && allowed.has(item))
     : [];
 
-  const requestedSet = new Set(requested);
-  required.forEach((key) => requestedSet.add(key));
-
-  const normalized = columns
-    .map((column) => column.key)
-    .filter((key) => requestedSet.has(key));
+  const requestedSet = new Set<string>();
+  const normalized = requested.filter((key) => {
+    if (requestedSet.has(key)) return false;
+    requestedSet.add(key);
+    return true;
+  });
+  required.forEach((key) => {
+    if (!requestedSet.has(key)) {
+      normalized.push(key);
+      requestedSet.add(key);
+    }
+  });
 
   if (normalized.length > 0) return normalized;
   return columns.map((column) => column.key);

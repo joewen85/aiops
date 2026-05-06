@@ -10,6 +10,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { DockerPage } from "@/pages/DockerPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MessagesPage } from "@/pages/MessagesPage";
+import { MiddlewarePage } from "@/pages/MiddlewarePage";
 import { ModulePage } from "@/pages/ModulePage";
 import { RBACPage } from "@/pages/RBACPage";
 import { UsersPage } from "@/pages/UsersPage";
@@ -37,7 +38,7 @@ export const router = createBrowserRouter([
           { path: "cloud", element: withMenuGuard("menu.cloud", <CloudPage />) },
           { path: "tickets", element: withMenuGuard("menu.tickets", <ModulePage />) },
           { path: "docker", element: withMenuGuard("menu.docker", <DockerPage />) },
-          { path: "middleware", element: withMenuGuard("menu.middleware", <ModulePage />) },
+          { path: "middleware", element: withMenuGuard("menu.middleware", <MiddlewarePage />) },
           { path: "observability", element: withMenuGuard("menu.observability", <ModulePage />) },
           { path: "kubernetes", element: withMenuGuard("menu.kubernetes", <ModulePage />) },
           { path: "events", element: withMenuGuard("menu.events", <ModulePage />) },

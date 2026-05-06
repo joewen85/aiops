@@ -417,6 +417,31 @@ h4 {
   gap: 8px;
 }
 
+.table-settings-order-list {
+  display: grid;
+  gap: 8px;
+}
+
+.table-settings-order-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.table-settings-order-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.table-settings-order-actions .btn {
+  padding: 5px 8px;
+}
+
 .column-filter {
   position: relative;
   display: inline-flex;
@@ -673,6 +698,105 @@ h4 {
   padding: 12px;
   background: color-mix(in srgb, var(--bg) 82%, transparent);
   font-size: 12px;
+}
+
+.middleware-form {
+  display: grid;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.middleware-form-section {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+}
+
+.middleware-form-section-title {
+  display: grid;
+  gap: 4px;
+}
+
+.middleware-form-section-title h4,
+.middleware-form-section-title p {
+  margin: 0;
+}
+
+.middleware-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.middleware-form-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.middleware-form-field span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.middleware-form-field input,
+.middleware-form-field select,
+.middleware-form-field textarea {
+  width: 100%;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.middleware-form-field-wide {
+  grid-column: 1 / -1;
+}
+
+.middleware-json-editor {
+  min-height: 140px;
+  resize: vertical;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  line-height: 1.5;
+}
+
+.middleware-tls-card {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 12px;
+  background: var(--bg-elevated);
+}
+
+.middleware-tls-card input {
+  margin-top: 3px;
+}
+
+.middleware-tls-card span {
+  display: grid;
+  gap: 3px;
+}
+
+.middleware-tls-card small {
+  color: var(--text-muted);
+}
+
+.middleware-form-actions {
+  position: sticky;
+  bottom: -14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 12px 0 0;
+  background: var(--bg-elevated);
 }
 
 .rbac-binding-actions {
@@ -1010,6 +1134,9 @@ h4 {
     width: 100%;
   }
   .table-settings-columns {
+    grid-template-columns: 1fr;
+  }
+  .middleware-form-grid {
     grid-template-columns: 1fr;
   }
 }

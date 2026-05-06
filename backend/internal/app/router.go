@@ -238,7 +238,13 @@ func registerPhase2Routes(r *gin.RouterGroup, h *handler.Handler) {
 	r.PUT("/middleware/instances/:id", h.UpdateMiddlewareInstance)
 	r.DELETE("/middleware/instances/:id", h.DeleteMiddlewareInstance)
 	r.POST("/middleware/instances/:id/check", h.CheckMiddlewareInstance)
+	r.GET("/middleware/instances/:id/metrics", h.ListMiddlewareMetrics)
+	r.POST("/middleware/instances/:id/metrics/collect", h.CollectMiddlewareMetrics)
 	r.POST("/middleware/instances/:id/action", h.MiddlewareAction)
+	r.GET("/middleware/operations", h.ListMiddlewareOperations)
+	r.GET("/middleware/operations/:id", h.GetMiddlewareOperation)
+	r.GET("/middleware/aiops/protocol", h.MiddlewareAIOpsProtocol)
+	r.POST("/middleware/actions", h.MiddlewareAction)
 
 	r.GET("/observability/sources", h.ListObservabilitySources)
 	r.POST("/observability/sources", h.CreateObservabilitySource)

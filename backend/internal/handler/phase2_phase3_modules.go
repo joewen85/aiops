@@ -503,28 +503,6 @@ func (h *Handler) ApproveTicket(c *gin.Context) {
 	response.Success(c, gin.H{"id": id, "approved": true})
 }
 
-func (h *Handler) ListMiddlewareInstances(c *gin.Context) {
-	listByModel[models.MiddlewareInstance](c, h.DB)
-}
-func (h *Handler) GetMiddlewareInstance(c *gin.Context) { getByID[models.MiddlewareInstance](c, h.DB) }
-func (h *Handler) CreateMiddlewareInstance(c *gin.Context) {
-	createByModel[models.MiddlewareInstance](c, h.DB)
-}
-func (h *Handler) UpdateMiddlewareInstance(c *gin.Context) {
-	updateByModel[models.MiddlewareInstance](c, h.DB)
-}
-func (h *Handler) DeleteMiddlewareInstance(c *gin.Context) {
-	deleteByModel[models.MiddlewareInstance](c, h.DB)
-}
-
-func (h *Handler) CheckMiddlewareInstance(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	response.Success(c, gin.H{"id": id, "healthy": true})
-}
-
 func parseCloudAccountVerifiedQuery(raw string) (bool, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "1", "true", "yes":
@@ -537,20 +515,6 @@ func parseCloudAccountVerifiedQuery(raw string) (bool, bool) {
 		return false, false
 	}
 	return value, true
-}
-
-func (h *Handler) MiddlewareAction(c *gin.Context) {
-	id, ok := parseID(c)
-	if !ok {
-		return
-	}
-	var req struct {
-		Action string `json:"action" binding:"required"`
-	}
-	if !bindJSON(c, &req) {
-		return
-	}
-	response.Success(c, gin.H{"id": id, "action": req.Action, "status": "accepted"})
 }
 
 func (h *Handler) ListObservabilitySources(c *gin.Context) {
