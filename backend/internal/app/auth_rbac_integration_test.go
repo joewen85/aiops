@@ -545,6 +545,32 @@ func TestCreateUserWithRoleAndDepartmentBindingsIntegration(t *testing.T) {
 		t.Fatalf("expected user detail includes bound role and department, got %+v", detail)
 	}
 
+	listRec := sendJSONRequest(t, router, http.MethodGet, "/api/v1/users?page=1&pageSize=20", adminToken, nil)
+	listResp := assertOKResponse(t, listRec)
+	var listData listPayload[struct {
+		models.User
+		RoleIDs       []uint              `json:"roleIds"`
+		Roles         []models.Role       `json:"roles"`
+		DepartmentIDs []uint              `json:"departmentIds"`
+		Departments   []models.Department `json:"departments"`
+	}]
+	if err := json.Unmarshal(listResp.Data, &listData); err != nil {
+		t.Fatalf("unmarshal user list failed: %v", err)
+	}
+	foundInList := false
+	for _, item := range listData.List {
+		if item.ID != created.ID {
+			continue
+		}
+		foundInList = true
+		if len(item.Roles) != 1 || item.Roles[0].ID != roleID || len(item.Departments) != 1 || item.Departments[0].ID != departmentID {
+			t.Fatalf("expected user list includes bound role and department, got %+v", item)
+		}
+	}
+	if !foundInList {
+		t.Fatalf("expected created user in list response")
+	}
+
 	invalidRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/users", adminToken, map[string]any{
 		"username": "create-bound-invalid-user",
 		"password": "CreateBound@123",

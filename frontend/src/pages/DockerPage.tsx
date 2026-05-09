@@ -18,7 +18,7 @@ import {
 } from "@/api/docker";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { PermissionButton } from "@/components/PermissionButton";
-import { RowActionOverflow } from "@/components/RowActionOverflow";
+import { ListRowActions } from "@/components/RowActionOverflow";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import type {
@@ -578,7 +578,7 @@ export function DockerPage() {
       case "actions":
         return (
           <div className="rbac-row-actions">
-            <RowActionOverflow
+            <ListRowActions
               title="Docker 主机更多操作"
               actions={[
                 { key: "select", label: "查看资源", onClick: () => { setSelectedHostId(item.id); setResourcePage(1); } },
@@ -612,7 +612,7 @@ export function DockerPage() {
       case "actions":
         return (
           <div className="rbac-row-actions">
-            <RowActionOverflow
+            <ListRowActions
               title="Docker 资源更多操作"
               actions={(item.aiopsActions ?? []).flatMap((action) => [
                 { key: `${action}-dry`, label: `${action} dry-run`, permissionKey: "button.docker.action.run", disabled: runningActionKey === `${item.id}-${action}-dry`, onClick: () => requestResourceAction(item, action, true) },
@@ -643,7 +643,7 @@ export function DockerPage() {
       case "actions":
         return (
           <div className="rbac-row-actions">
-            <RowActionOverflow
+            <ListRowActions
               title="Compose Stack 更多操作"
               actions={[
                 { key: "validate-dry", label: "validate dry-run", permissionKey: "button.docker.action.run", disabled: runningActionKey === `compose-${item.id}-validate-dry`, onClick: () => requestComposeAction(item, "validate", true) },

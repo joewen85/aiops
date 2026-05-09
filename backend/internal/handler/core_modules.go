@@ -31,7 +31,27 @@ type userDetailResponse struct {
 	Departments   []models.Department `json:"departments"`
 }
 
-func (h *Handler) ListUsers(c *gin.Context) { listByModel[models.User](c, h.DB) }
+func (h *Handler) ListUsers(c *gin.Context) {
+	page := pagination.Parse(c)
+	var (
+		users []models.User
+		total int64
+	)
+	if err := h.DB.Model(&models.User{}).Count(&total).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	if err := h.DB.Order("id desc").Limit(page.PageSize).Offset(pagination.Offset(page)).Find(&users).Error; err != nil {
+		response.Internal(c, err)
+		return
+	}
+	items, err := h.usersWithBindings(users)
+	if err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.List(c, items, total, page.Page, page.PageSize)
+}
 
 func (h *Handler) GetUser(c *gin.Context) {
 	id, ok := parseID(c)
@@ -371,6 +391,60 @@ func (h *Handler) userDetail(userID uint) (userDetailResponse, error) {
 	}, nil
 }
 
+func (h *Handler) usersWithBindings(users []models.User) ([]userDetailResponse, error) {
+	items := make([]userDetailResponse, 0, len(users))
+	if len(users) == 0 {
+		return items, nil
+	}
+	userIDs := make([]uint, 0, len(users))
+	for _, user := range users {
+		userIDs = append(userIDs, user.ID)
+	}
+
+	roleIDsByUser := map[uint][]uint{}
+	roleIDSet := map[uint]struct{}{}
+	var userRoles []models.UserRole
+	if err := h.DB.Where("user_id IN ?", userIDs).Order("role_id asc").Find(&userRoles).Error; err != nil {
+		return nil, err
+	}
+	for _, binding := range userRoles {
+		roleIDsByUser[binding.UserID] = append(roleIDsByUser[binding.UserID], binding.RoleID)
+		roleIDSet[binding.RoleID] = struct{}{}
+	}
+	rolesByID, err := h.rolesByID(roleIDSet)
+	if err != nil {
+		return nil, err
+	}
+
+	departmentIDsByUser := map[uint][]uint{}
+	departmentIDSet := map[uint]struct{}{}
+	var userDepartments []models.UserDepartment
+	if err := h.DB.Where("user_id IN ?", userIDs).Order("department_id asc").Find(&userDepartments).Error; err != nil {
+		return nil, err
+	}
+	for _, binding := range userDepartments {
+		departmentIDsByUser[binding.UserID] = append(departmentIDsByUser[binding.UserID], binding.DepartmentID)
+		departmentIDSet[binding.DepartmentID] = struct{}{}
+	}
+	departmentsByID, err := h.departmentsByID(departmentIDSet)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, user := range users {
+		roleIDs := roleIDsByUser[user.ID]
+		departmentIDs := departmentIDsByUser[user.ID]
+		items = append(items, userDetailResponse{
+			User:          user,
+			RoleIDs:       roleIDs,
+			Roles:         orderedRoles(roleIDs, rolesByID),
+			DepartmentIDs: departmentIDs,
+			Departments:   orderedDepartments(departmentIDs, departmentsByID),
+		})
+	}
+	return items, nil
+}
+
 func (h *Handler) userBoundRoles(userID uint) ([]uint, []models.Role, error) {
 	var roleIDs []uint
 	if err := h.DB.Table("user_roles").Where("user_id = ?", userID).Order("role_id asc").Pluck("role_id", &roleIDs).Error; err != nil {
@@ -399,6 +473,66 @@ func (h *Handler) userBoundDepartments(userID uint) ([]uint, []models.Department
 		return nil, nil, err
 	}
 	return departmentIDs, departments, nil
+}
+
+func (h *Handler) rolesByID(idSet map[uint]struct{}) (map[uint]models.Role, error) {
+	result := map[uint]models.Role{}
+	if len(idSet) == 0 {
+		return result, nil
+	}
+	ids := keysFromSet(idSet)
+	var roles []models.Role
+	if err := h.DB.Where("id IN ?", ids).Find(&roles).Error; err != nil {
+		return nil, err
+	}
+	for _, role := range roles {
+		result[role.ID] = role
+	}
+	return result, nil
+}
+
+func (h *Handler) departmentsByID(idSet map[uint]struct{}) (map[uint]models.Department, error) {
+	result := map[uint]models.Department{}
+	if len(idSet) == 0 {
+		return result, nil
+	}
+	ids := keysFromSet(idSet)
+	var departments []models.Department
+	if err := h.DB.Where("id IN ?", ids).Find(&departments).Error; err != nil {
+		return nil, err
+	}
+	for _, department := range departments {
+		result[department.ID] = department
+	}
+	return result, nil
+}
+
+func keysFromSet(idSet map[uint]struct{}) []uint {
+	ids := make([]uint, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func orderedRoles(roleIDs []uint, rolesByID map[uint]models.Role) []models.Role {
+	roles := make([]models.Role, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		if role, ok := rolesByID[roleID]; ok {
+			roles = append(roles, role)
+		}
+	}
+	return roles
+}
+
+func orderedDepartments(departmentIDs []uint, departmentsByID map[uint]models.Department) []models.Department {
+	departments := make([]models.Department, 0, len(departmentIDs))
+	for _, departmentID := range departmentIDs {
+		if department, ok := departmentsByID[departmentID]; ok {
+			departments = append(departments, department)
+		}
+	}
+	return departments
 }
 
 func (h *Handler) normalizeRoleIDs(roleIDs []uint) ([]uint, error) {

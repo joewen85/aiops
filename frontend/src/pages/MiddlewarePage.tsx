@@ -16,7 +16,7 @@ import {
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { PermissionButton } from "@/components/PermissionButton";
 import type { RowActionItem } from "@/components/RowActionOverflow";
-import { RowActionOverflow } from "@/components/RowActionOverflow";
+import { ListRowActions } from "@/components/RowActionOverflow";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import type {
@@ -784,7 +784,7 @@ function renderMiddlewareCell(columnKey: string, item: MiddlewareInstanceItem, a
     case "lastCheckedAt":
       return formatTime(item.lastCheckedAt);
     case "actions":
-      return <div className="rbac-row-actions"><RowActionOverflow actions={actions} /></div>;
+      return <div className="rbac-row-actions"><ListRowActions title="中间件更多操作" actions={actions} /></div>;
     default:
       return "-";
   }

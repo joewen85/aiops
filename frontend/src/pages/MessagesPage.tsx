@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createMessage, listMessages, markMessageRead } from "@/api/messages";
 import type { PageData } from "@/api/types";
 import { PermissionButton } from "@/components/PermissionButton";
+import { ListRowActions } from "@/components/RowActionOverflow";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -217,14 +218,19 @@ export function MessagesPage() {
       case "actions":
         return (
           <div className="rbac-row-actions">
-            <PermissionButton
-              permissionKey="button.messages.message.mark_read"
-              className="btn ghost"
-              disabled={message.read}
-              onClick={() => void handleMarkRead(message.id)}
-            >
-              标记已读
-            </PermissionButton>
+            <ListRowActions
+              title="消息更多操作"
+              actions={[
+                {
+                  key: `${message.id}-mark-read`,
+                  label: "标记已读",
+                  permissionKey: "button.messages.message.mark_read",
+                  className: "btn ghost cursor-pointer",
+                  disabled: message.read,
+                  onClick: () => void handleMarkRead(message.id),
+                },
+              ]}
+            />
           </div>
         );
       default:

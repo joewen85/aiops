@@ -24,7 +24,9 @@ import {
 } from "@/api/users";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { FieldFilterPopover } from "@/components/FieldFilterPopover";
+import { ListRowActions } from "@/components/RowActionOverflow";
 import { PermissionButton } from "@/components/PermissionButton";
+import type { RowActionItem } from "@/components/RowActionOverflow";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import type { PageData } from "@/api/types";
@@ -36,13 +38,14 @@ import {
   sanitizeVisibleColumnKeys,
   savePersistedListSettings,
 } from "@/utils/listSettings";
+import { formatBindingNameList } from "@/utils/bindingDisplay";
 import { showToast } from "@/utils/toast";
 
 const defaultPageSize = 10;
 const pageSizeOptions = [10, 20, 50];
-const USER_LIST_SETTINGS_KEY = "users.table.settings";
+const USER_LIST_SETTINGS_KEY = "users.table.settings.v2";
 const DEPARTMENT_LIST_SETTINGS_KEY = "departments.table.settings";
-const defaultUserVisibleColumnKeys = ["username", "displayName", "status", "updatedAt", "actions"];
+const defaultUserVisibleColumnKeys = ["username", "displayName", "roles", "departments", "status", "updatedAt", "actions"];
 const defaultDepartmentVisibleColumnKeys = ["name", "parentId", "updatedAt", "actions"];
 const userStatusFilterOptions = [
   { value: "active", label: "启用" },
@@ -54,6 +57,8 @@ const userTableColumns: TableSettingsColumn[] = [
   { key: "username", label: "用户名" },
   { key: "displayName", label: "姓名" },
   { key: "email", label: "邮箱" },
+  { key: "roles", label: "角色" },
+  { key: "departments", label: "部门" },
   { key: "status", label: "状态" },
   { key: "updatedAt", label: "更新时间" },
   { key: "actions", label: "操作", required: true },
@@ -634,7 +639,8 @@ export function UsersPage() {
     try {
       await bindDepartmentUsers(departmentId, selectedMemberUserIds);
       showToast("部门成员绑定已保存");
-      await loadDepartmentMemberBinding(departmentId);
+      await loadDepartmentPage(departmentPage, departmentPageSize);
+      setDrawer({ type: "closed" });
     } catch {
       showToast("部门成员绑定失败");
     } finally {
@@ -845,6 +851,86 @@ export function UsersPage() {
   const departmentVisibleColumnSet = new Set(visibleDepartmentColumnKeys);
   const userColSpan = Math.max(1, visibleUserColumnKeys.length);
   const departmentColSpan = Math.max(1, visibleDepartmentColumnKeys.length);
+  const userRowActions = (user: UserItem): RowActionItem[] => [
+    {
+      key: "detail",
+      label: "查看详情",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openUserDetailDrawer(user.id),
+    },
+    {
+      key: "edit",
+      label: "修改",
+      permissionKey: "button.users.user.update",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openUserEditDrawer(user.id),
+    },
+    {
+      key: "toggle-status",
+      label: statusChangingUserId === user.id ? "处理中..." : user.isActive ? "停用" : "启用",
+      permissionKey: "button.users.user.toggle_status",
+      className: "btn ghost cursor-pointer",
+      disabled: statusChangingUserId === user.id,
+      onClick: () => void handleToggleUserActive(user),
+    },
+    {
+      key: "reset-password",
+      label: "重置密码",
+      permissionKey: "button.users.user.reset_password",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openUserResetPasswordDrawer(user.id),
+    },
+    {
+      key: "bind-roles",
+      label: "绑定角色",
+      permissionKey: "button.users.user.bind_roles",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openUserBindRolesDrawer(user.id),
+    },
+    {
+      key: "bind-departments",
+      label: "绑定部门",
+      permissionKey: "button.users.user.bind_departments",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openUserBindDepartmentsDrawer(user.id),
+    },
+    {
+      key: "delete",
+      label: "删除",
+      permissionKey: "button.users.user.delete",
+      className: "btn ghost cursor-pointer",
+      onClick: () => requestDeleteUser(user),
+    },
+  ];
+  const departmentRowActions = (department: DepartmentListItem): RowActionItem[] => [
+    {
+      key: "detail",
+      label: "查看详情",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openDepartmentDetailDrawer(department.id),
+    },
+    {
+      key: "edit",
+      label: "修改",
+      permissionKey: "button.users.department.update",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openDepartmentEditDrawer(department.id),
+    },
+    {
+      key: "bind-members",
+      label: "绑定成员",
+      permissionKey: "button.users.department.bind_members",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openDepartmentBindMembersDrawer(department.id),
+    },
+    {
+      key: "delete",
+      label: "删除",
+      permissionKey: "button.users.department.delete",
+      className: "btn ghost cursor-pointer",
+      onClick: () => requestDeleteDepartment(department),
+    },
+  ];
 
   return (
     <section className="page">
@@ -875,6 +961,8 @@ export function UsersPage() {
                     {userVisibleColumnSet.has("username") && <th>用户名</th>}
                     {userVisibleColumnSet.has("displayName") && <th>姓名</th>}
                     {userVisibleColumnSet.has("email") && <th>邮箱</th>}
+                    {userVisibleColumnSet.has("roles") && <th>角色</th>}
+                    {userVisibleColumnSet.has("departments") && <th>部门</th>}
                     {userVisibleColumnSet.has("status") && (
                       <th>
                         <div className="table-actions-header">
@@ -912,57 +1000,13 @@ export function UsersPage() {
                       {userVisibleColumnSet.has("username") && <td>{user.username}</td>}
                       {userVisibleColumnSet.has("displayName") && <td>{user.displayName || "-"}</td>}
                       {userVisibleColumnSet.has("email") && <td>{user.email || "-"}</td>}
+                      {userVisibleColumnSet.has("roles") && <td>{formatBindingNameList(user.roles, user.roleIds, "角色")}</td>}
+                      {userVisibleColumnSet.has("departments") && <td>{formatBindingNameList(user.departments, user.departmentIds, "部门")}</td>}
                       {userVisibleColumnSet.has("status") && <td>{user.isActive ? "启用" : "停用"}</td>}
                       {userVisibleColumnSet.has("updatedAt") && <td>{formatDateTime(user.updatedAt)}</td>}
                       {userVisibleColumnSet.has("actions") && (
                         <td className="rbac-row-actions">
-                          <button className="btn ghost cursor-pointer" type="button" onClick={() => openUserDetailDrawer(user.id)}>
-                            查看详情
-                          </button>
-                          <PermissionButton permissionKey="button.users.user.update" className="btn ghost cursor-pointer" type="button" onClick={() => openUserEditDrawer(user.id)}>
-                            修改
-                          </PermissionButton>
-                          <PermissionButton
-                            permissionKey="button.users.user.toggle_status"
-                            className="btn ghost cursor-pointer"
-                            type="button"
-                            onClick={() => void handleToggleUserActive(user)}
-                            disabled={statusChangingUserId === user.id}
-                          >
-                            {statusChangingUserId === user.id ? "处理中..." : user.isActive ? "停用" : "启用"}
-                          </PermissionButton>
-                          <PermissionButton
-                            permissionKey="button.users.user.reset_password"
-                            className="btn ghost cursor-pointer"
-                            type="button"
-                            onClick={() => openUserResetPasswordDrawer(user.id)}
-                          >
-                            重置密码
-                          </PermissionButton>
-                          <PermissionButton
-                            permissionKey="button.users.user.bind_roles"
-                            className="btn ghost cursor-pointer"
-                            type="button"
-                            onClick={() => openUserBindRolesDrawer(user.id)}
-                          >
-                            绑定角色
-                          </PermissionButton>
-                          <PermissionButton
-                            permissionKey="button.users.user.bind_departments"
-                            className="btn ghost cursor-pointer"
-                            type="button"
-                            onClick={() => openUserBindDepartmentsDrawer(user.id)}
-                          >
-                            绑定部门
-                          </PermissionButton>
-                          <PermissionButton
-                            permissionKey="button.users.user.delete"
-                            className="btn ghost cursor-pointer"
-                            type="button"
-                            onClick={() => requestDeleteUser(user)}
-                          >
-                            删除
-                          </PermissionButton>
+                          <ListRowActions title="用户更多操作" actions={userRowActions(user)} />
                         </td>
                       )}
                     </tr>
@@ -1034,28 +1078,7 @@ export function UsersPage() {
                       {departmentVisibleColumnSet.has("updatedAt") && <td>{formatDateTime(department.updatedAt)}</td>}
                       {departmentVisibleColumnSet.has("actions") && (
                         <td className="rbac-row-actions">
-                          <button className="btn ghost cursor-pointer" type="button" onClick={() => openDepartmentDetailDrawer(department.id)}>
-                            查看详情
-                          </button>
-                          <PermissionButton permissionKey="button.users.department.update" className="btn ghost cursor-pointer" type="button" onClick={() => openDepartmentEditDrawer(department.id)}>
-                            修改
-                          </PermissionButton>
-                          <PermissionButton
-                            permissionKey="button.users.department.bind_members"
-                            className="btn ghost cursor-pointer"
-                            type="button"
-                            onClick={() => openDepartmentBindMembersDrawer(department.id)}
-                          >
-                            绑定成员
-                          </PermissionButton>
-                          <PermissionButton
-                            permissionKey="button.users.department.delete"
-                            className="btn ghost cursor-pointer"
-                            type="button"
-                            onClick={() => requestDeleteDepartment(department)}
-                          >
-                            删除
-                          </PermissionButton>
+                          <ListRowActions title="部门更多操作" actions={departmentRowActions(department)} />
                         </td>
                       )}
                     </tr>

@@ -13,7 +13,7 @@ export interface RowActionItem {
   className?: string;
 }
 
-interface RowActionOverflowProps {
+export interface RowActionOverflowProps {
   actions: RowActionItem[];
   maxInline?: number;
   moreLabel?: string;
@@ -146,4 +146,8 @@ export function RowActionOverflow({
         : null}
     </>
   );
+}
+
+export function ListRowActions(props: RowActionOverflowProps) {
+  return <RowActionOverflow maxInline={3} {...props} />;
 }

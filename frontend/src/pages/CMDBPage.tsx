@@ -18,7 +18,7 @@ import {
 } from "@/api/cmdb";
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { PermissionButton } from "@/components/PermissionButton";
-import { RowActionOverflow } from "@/components/RowActionOverflow";
+import { ListRowActions } from "@/components/RowActionOverflow";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import {
@@ -704,7 +704,7 @@ export function CMDBPage() {
       case "actions":
         return (
           <div className="rbac-row-actions">
-            <RowActionOverflow
+            <ListRowActions
               title="CI资源更多操作"
               actions={[
                 {

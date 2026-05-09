@@ -17,6 +17,8 @@ import {
 import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import { FieldFilterPopover } from "@/components/FieldFilterPopover";
 import { PermissionButton } from "@/components/PermissionButton";
+import type { RowActionItem } from "@/components/RowActionOverflow";
+import { ListRowActions } from "@/components/RowActionOverflow";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import type { PermissionItem, PermissionType, RoleItem } from "@/types/rbac";
@@ -861,6 +863,60 @@ export function RBACPage() {
   const permissionVisibleColumnSet = new Set(visiblePermissionColumnKeys);
   const roleColSpan = Math.max(1, visibleRoleColumnKeys.length);
   const permissionColSpan = Math.max(1, visiblePermissionColumnKeys.length);
+  const roleRowActions = (role: RoleItem): RowActionItem[] => [
+    {
+      key: "bind-permissions",
+      label: "权限绑定",
+      permissionKey: "button.rbac.binding.save",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openRoleDetailDrawer(role.id),
+    },
+    {
+      key: "detail",
+      label: "查看详情",
+      permissionKey: "button.rbac.role.detail",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openRoleDetailDrawer(role.id),
+    },
+    {
+      key: "edit",
+      label: "修改",
+      permissionKey: "button.rbac.role.update",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openRoleEditDrawer(role),
+    },
+    {
+      key: "delete",
+      label: "删除",
+      permissionKey: "button.rbac.role.delete",
+      className: "btn ghost cursor-pointer",
+      disabled: role.builtIn,
+      onClick: () => requestDeleteRole(role),
+    },
+  ];
+  const permissionRowActions = (permission: PermissionItem): RowActionItem[] => [
+    {
+      key: "detail",
+      label: "查看详情",
+      permissionKey: "button.rbac.permission.detail",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openPermissionDetailDrawer(permission.id),
+    },
+    {
+      key: "edit",
+      label: "修改",
+      permissionKey: "button.rbac.permission.update",
+      className: "btn ghost cursor-pointer",
+      onClick: () => openPermissionEditDrawer(permission),
+    },
+    {
+      key: "delete",
+      label: "删除",
+      permissionKey: "button.rbac.permission.delete",
+      className: "btn ghost cursor-pointer",
+      onClick: () => requestDeletePermission(permission),
+    },
+  ];
   const displayRole = showRoleDetail
     ? (roleDetail ?? roles.find((item) => item.id === currentRoleId) ?? null)
     : null;
@@ -955,24 +1011,7 @@ export function RBACPage() {
                     {roleVisibleColumnSet.has("updatedAt") && <td>{formatDateTime(role.updatedAt)}</td>}
                     {roleVisibleColumnSet.has("actions") && (
                       <td className="rbac-row-actions">
-                        <PermissionButton permissionKey="button.rbac.binding.save" className="btn ghost cursor-pointer" type="button" onClick={() => openRoleDetailDrawer(role.id)}>
-                          权限绑定
-                        </PermissionButton>
-                        <PermissionButton permissionKey="button.rbac.role.detail" className="btn ghost cursor-pointer" type="button" onClick={() => openRoleDetailDrawer(role.id)}>
-                          查看详情
-                        </PermissionButton>
-                        <PermissionButton permissionKey="button.rbac.role.update" className="btn ghost cursor-pointer" type="button" onClick={() => openRoleEditDrawer(role)}>
-                          修改
-                        </PermissionButton>
-                        <PermissionButton
-                          permissionKey="button.rbac.role.delete"
-                          className="btn ghost cursor-pointer"
-                          type="button"
-                          onClick={() => requestDeleteRole(role)}
-                          disabled={role.builtIn}
-                        >
-                          删除
-                        </PermissionButton>
+                        <ListRowActions title="角色更多操作" actions={roleRowActions(role)} />
                       </td>
                     )}
                   </tr>
@@ -1081,15 +1120,7 @@ export function RBACPage() {
                     {permissionVisibleColumnSet.has("key") && <td>{permission.key || "-"}</td>}
                     {permissionVisibleColumnSet.has("actions") && (
                       <td className="rbac-row-actions">
-                        <PermissionButton permissionKey="button.rbac.permission.detail" className="btn ghost cursor-pointer" type="button" onClick={() => openPermissionDetailDrawer(permission.id)}>
-                          查看详情
-                        </PermissionButton>
-                        <PermissionButton permissionKey="button.rbac.permission.update" className="btn ghost cursor-pointer" type="button" onClick={() => openPermissionEditDrawer(permission)}>
-                          修改
-                        </PermissionButton>
-                        <PermissionButton permissionKey="button.rbac.permission.delete" className="btn ghost cursor-pointer" type="button" onClick={() => requestDeletePermission(permission)}>
-                          删除
-                        </PermissionButton>
+                        <ListRowActions title="权限更多操作" actions={permissionRowActions(permission)} />
                       </td>
                     )}
                   </tr>

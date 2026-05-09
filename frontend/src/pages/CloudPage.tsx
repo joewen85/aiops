@@ -18,7 +18,7 @@ import { DeleteConfirmModal } from "@/components/DeleteConfirmModal";
 import type { TableSettingsColumn } from "@/components/TableSettingsModal";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
 import { PermissionButton } from "@/components/PermissionButton";
-import { RowActionOverflow } from "@/components/RowActionOverflow";
+import { ListRowActions } from "@/components/RowActionOverflow";
 import type { CloudAccountItem, CloudAssetItem, CloudAssetType, CloudProvider } from "@/types/cloud";
 import {
   loadPersistedListSettings,
@@ -752,7 +752,7 @@ export function CloudPage() {
                         {accountVisibleColumnSet.has("actions") && (
                           <td>
                             <div className="rbac-row-actions">
-                              <RowActionOverflow
+                              <ListRowActions
                                 title="云账号更多操作"
                                 actions={[
                                   {
@@ -953,7 +953,7 @@ export function CloudPage() {
                         {assetVisibleColumnSet.has("actions") && (
                           <td>
                             <div className="rbac-row-actions">
-                              <RowActionOverflow
+                              <ListRowActions
                                 title="云资源更多操作"
                                 actions={[
                                   {
