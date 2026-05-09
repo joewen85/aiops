@@ -114,6 +114,21 @@ export interface TicketOperationItem {
   request?: Record<string, unknown>;
   result?: Record<string, unknown>;
   errorMessage?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt?: string;
+}
+
+export interface TicketSLAJob {
+  id: number;
+  status: string;
+  startedAt?: string;
+  finishedAt?: string;
+  scannedCount?: number;
+  overdueCount?: number;
+  notifiedCount?: number;
+  summary?: Record<string, unknown>;
+  errorMessage?: string;
   createdAt?: string;
 }
 
@@ -149,6 +164,18 @@ export interface TicketAIOpsProtocol {
   safety?: Record<string, unknown>;
 }
 
+export interface TicketAIOpsContext {
+  protocolVersion: string;
+  traceId: string;
+  generatedAt: string;
+  scope: string;
+  openTickets: Array<Record<string, unknown>>;
+  overdueTickets: Array<Record<string, unknown>>;
+  pendingApprovals: TicketApprovalItem[];
+  recentOperations: TicketOperationItem[];
+  statusCounts: Record<string, number>;
+}
+
 export interface TicketOperationPayload {
   module: string;
   action: string;
@@ -159,6 +186,13 @@ export interface TicketOperationPayload {
 export interface TicketOperationResult {
   protocolVersion: string;
   traceId: string;
+  ticketId?: number;
+  operationId?: number;
+  status?: string;
+  riskLevel?: string;
+  approvalRequired?: boolean;
+  rollback?: unknown;
+  safetyChecks?: unknown;
   operation: TicketOperationItem;
   dryRun?: Record<string, unknown>;
 }

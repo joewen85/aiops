@@ -296,7 +296,7 @@ type TicketOperation struct {
 	TicketID     uint              `gorm:"index;not null" json:"ticketId"`
 	Module       string            `gorm:"size:64;index;not null" json:"module"`
 	Action       string            `gorm:"size:64;index;not null" json:"action"`
-	DryRun       bool              `gorm:"index;default:true" json:"dryRun"`
+	DryRun       bool              `gorm:"index" json:"dryRun"`
 	Status       string            `gorm:"size:32;index;not null" json:"status"`
 	RiskLevel    string            `gorm:"size:16;index;default:P2" json:"riskLevel"`
 	Request      datatypes.JSONMap `gorm:"type:jsonb" json:"request"`
@@ -304,6 +304,18 @@ type TicketOperation struct {
 	ErrorMessage string            `gorm:"type:text" json:"errorMessage"`
 	StartedAt    *time.Time        `gorm:"index" json:"startedAt,omitempty"`
 	FinishedAt   *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
+}
+
+type TicketSLAJob struct {
+	BaseModel
+	Status        string            `gorm:"size:32;index;uniqueIndex:idx_ticket_sla_running,where:status = 'running';default:running" json:"status"`
+	StartedAt     *time.Time        `gorm:"index" json:"startedAt,omitempty"`
+	FinishedAt    *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
+	ScannedCount  int               `json:"scannedCount"`
+	OverdueCount  int               `json:"overdueCount"`
+	NotifiedCount int               `json:"notifiedCount"`
+	Summary       datatypes.JSONMap `gorm:"type:jsonb" json:"summary"`
+	ErrorMessage  string            `gorm:"type:text" json:"errorMessage"`
 }
 
 type Event struct {
@@ -527,6 +539,7 @@ func AutoMigrateModels() []interface{} {
 		&TicketAttachment{},
 		&TicketTemplate{},
 		&TicketOperation{},
+		&TicketSLAJob{},
 		&Event{},
 		&InAppMessage{},
 		&MessageReadReceipt{},

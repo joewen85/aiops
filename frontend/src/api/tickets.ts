@@ -2,8 +2,11 @@ import { apiClient } from "@/api/client";
 import type { ApiResponse, PageData } from "@/api/types";
 import type {
   TicketAIOpsProtocol,
+  TicketAIOpsContext,
+  TicketAttachmentItem,
   TicketCommentItem,
   TicketItem,
+  TicketSLAJob,
   TicketLinkItem,
   TicketOperationPayload,
   TicketOperationResult,
@@ -21,9 +24,12 @@ interface ListTicketsParams {
   env?: string;
   assigneeId?: number;
   requesterId?: number;
+  createdFrom?: string;
+  createdTo?: string;
+  slaOverdue?: boolean;
 }
 
-function buildQuery(params: Record<string, string | number | undefined>): string {
+function buildQuery(params: Record<string, string | number | boolean | undefined>): string {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined) return;
@@ -46,6 +52,9 @@ export async function listTickets(params: ListTicketsParams = {}): Promise<PageD
     env: params.env,
     assigneeId: params.assigneeId,
     requesterId: params.requesterId,
+    createdFrom: params.createdFrom,
+    createdTo: params.createdTo,
+    slaOverdue: params.slaOverdue,
   });
   const { data } = await apiClient.get<ApiResponse<PageData<TicketItem>>>(`/tickets${query}`);
   return data.data;
@@ -100,6 +109,16 @@ export async function rejectTicket(ticketId: number, comment?: string): Promise<
   return data.data;
 }
 
+export async function transferTicket(ticketId: number, assigneeId: number, comment?: string): Promise<TicketItem> {
+  const { data } = await apiClient.post<ApiResponse<TicketItem>>(`/tickets/${ticketId}/transfer`, { assigneeId, comment });
+  return data.data;
+}
+
+export async function addTicketApprover(ticketId: number, approverId: number, comment?: string, nodeKey = "manual", approvalType = "or"): Promise<Record<string, unknown>> {
+  const { data } = await apiClient.post<ApiResponse<Record<string, unknown>>>(`/tickets/${ticketId}/add-approver`, { approverId, comment, nodeKey, approvalType });
+  return data.data;
+}
+
 export async function createTicketComment(ticketId: number, payload: { content: string; internal?: boolean; attachments?: Record<string, unknown> }): Promise<TicketCommentItem> {
   const { data } = await apiClient.post<ApiResponse<TicketCommentItem>>(`/tickets/${ticketId}/comments`, payload);
   return data.data;
@@ -107,6 +126,15 @@ export async function createTicketComment(ticketId: number, payload: { content: 
 
 export async function createTicketLink(ticketId: number, payload: Partial<TicketLinkItem>): Promise<TicketLinkItem> {
   const { data } = await apiClient.post<ApiResponse<TicketLinkItem>>(`/tickets/${ticketId}/links`, payload);
+  return data.data;
+}
+
+export async function deleteTicketLink(ticketId: number, linkId: number): Promise<void> {
+  await apiClient.delete(`/tickets/${ticketId}/links/${linkId}`);
+}
+
+export async function createTicketAttachment(ticketId: number, payload: Partial<TicketAttachmentItem>): Promise<TicketAttachmentItem> {
+  const { data } = await apiClient.post<ApiResponse<TicketAttachmentItem>>(`/tickets/${ticketId}/attachments`, payload);
   return data.data;
 }
 
@@ -120,6 +148,21 @@ export async function getTicketAIOpsProtocol(): Promise<TicketAIOpsProtocol> {
   return data.data;
 }
 
+export async function getTicketAIOpsContext(limit = 20): Promise<TicketAIOpsContext> {
+  const { data } = await apiClient.get<ApiResponse<TicketAIOpsContext>>(`/tickets/aiops/context?limit=${limit}`);
+  return data.data;
+}
+
+export async function createTicketSLAJob(limit = 200): Promise<TicketSLAJob> {
+  const { data } = await apiClient.post<ApiResponse<TicketSLAJob>>("/tickets/sla/jobs", { limit });
+  return data.data;
+}
+
+export async function getTicketSLAJob(jobId: number): Promise<TicketSLAJob> {
+  const { data } = await apiClient.get<ApiResponse<TicketSLAJob>>(`/tickets/sla/jobs/${jobId}`);
+  return data.data;
+}
+
 export async function dryRunTicketOperation(ticketId: number, payload: TicketOperationPayload): Promise<TicketOperationResult> {
   const { data } = await apiClient.post<ApiResponse<TicketOperationResult>>(`/tickets/${ticketId}/operations/dry-run`, payload);
   return data.data;
@@ -127,5 +170,13 @@ export async function dryRunTicketOperation(ticketId: number, payload: TicketOpe
 
 export async function executeTicketOperation(ticketId: number, payload: TicketOperationPayload): Promise<TicketOperationResult> {
   const { data } = await apiClient.post<ApiResponse<TicketOperationResult>>(`/tickets/${ticketId}/operations/execute`, payload);
+  return data.data;
+}
+
+export async function retryTicketOperation(ticketId: number, operationId: number, confirmationText: string): Promise<TicketOperationResult> {
+  const { data } = await apiClient.post<ApiResponse<TicketOperationResult>>(
+    `/tickets/${ticketId}/operations/${operationId}/retry`,
+    { confirmationText },
+  );
   return data.data;
 }

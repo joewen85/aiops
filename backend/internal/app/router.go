@@ -214,6 +214,7 @@ func registerPhase2Routes(r *gin.RouterGroup, h *handler.Handler) {
 	r.GET("/tickets", h.ListTickets)
 	r.POST("/tickets", h.CreateTicket)
 	r.GET("/tickets/aiops/protocol", h.TicketAIOpsProtocol)
+	r.GET("/tickets/aiops/context", h.TicketAIOpsContext)
 	r.POST("/tickets/aiops/intents", h.TicketAIOpsIntent)
 	r.POST("/tickets/aiops/dry-run", h.TicketAIOpsDryRun)
 	r.GET("/ticket-templates", h.ListTicketTemplates)
@@ -244,6 +245,9 @@ func registerPhase2Routes(r *gin.RouterGroup, h *handler.Handler) {
 	r.GET("/tickets/:id/operations", h.ListTicketOperations)
 	r.POST("/tickets/:id/operations/dry-run", h.TicketOperationDryRun)
 	r.POST("/tickets/:id/operations/execute", h.TicketOperationExecute)
+	r.POST("/tickets/:id/operations/:operationId/retry", h.RetryTicketOperation)
+	r.POST("/tickets/sla/jobs", h.CreateTicketSLAJob)
+	r.GET("/tickets/sla/jobs/:id", h.GetTicketSLAJob)
 
 	r.GET("/docker/hosts", h.ListDockerHosts)
 	r.POST("/docker/hosts", h.CreateDockerHost)
