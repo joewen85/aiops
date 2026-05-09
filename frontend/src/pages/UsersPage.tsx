@@ -606,7 +606,8 @@ export function UsersPage() {
     try {
       await bindUserRoles(userId, selectedRoleIds);
       showToast("用户角色绑定已保存");
-      await loadUserRoleBinding(userId);
+      await loadUserPage(userPage, userPageSize);
+      setDrawer({ type: "closed" });
     } catch {
       showToast("用户角色绑定失败");
     } finally {
@@ -619,7 +620,8 @@ export function UsersPage() {
     try {
       await bindUserDepartments(userId, selectedDepartmentIds);
       showToast("用户部门绑定已保存");
-      await loadUserDepartmentBinding(userId);
+      await loadUserPage(userPage, userPageSize);
+      setDrawer({ type: "closed" });
     } catch {
       showToast("用户部门绑定失败");
     } finally {
