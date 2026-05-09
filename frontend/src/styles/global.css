@@ -923,6 +923,12 @@ h4 {
   gap: 12px;
 }
 
+.rbac-form-section-title {
+  display: grid;
+  gap: 3px;
+  margin-top: 4px;
+}
+
 .rbac-kv-grid {
   display: grid;
   gap: 10px;

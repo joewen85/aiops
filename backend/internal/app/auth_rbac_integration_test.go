@@ -483,6 +483,76 @@ func TestGetUserBindingDetailsIntegration(t *testing.T) {
 	}
 }
 
+func TestCreateUserWithRoleAndDepartmentBindingsIntegration(t *testing.T) {
+	router, database, _ := newRouterForIntegrationTest(t)
+	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")
+
+	roleID := createRoleViaAPI(t, router, adminToken, "create-user-bound-role")
+	departmentID := createDepartmentViaAPI(t, router, adminToken, "create-user-bound-dept")
+
+	createRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/users", adminToken, map[string]any{
+		"username":      "create-bound-user",
+		"password":      "CreateBound@123",
+		"displayName":   "创建即绑定用户",
+		"email":         "create-bound@example.com",
+		"isActive":      true,
+		"roleIds":       []uint{roleID, roleID},
+		"departmentIds": []uint{departmentID, departmentID},
+	})
+	createResp := assertOKResponse(t, createRec)
+	var created struct {
+		models.User
+		RoleIDs       []uint              `json:"roleIds"`
+		Roles         []models.Role       `json:"roles"`
+		DepartmentIDs []uint              `json:"departmentIds"`
+		Departments   []models.Department `json:"departments"`
+	}
+	if err := json.Unmarshal(createResp.Data, &created); err != nil {
+		t.Fatalf("unmarshal created user detail failed: %v", err)
+	}
+	if created.ID == 0 || !containsUint(created.RoleIDs, roleID) || !containsUint(created.DepartmentIDs, departmentID) {
+		t.Fatalf("expected created user returns bindings, got %+v", created)
+	}
+
+	var userRoles []models.UserRole
+	if err := database.Where("user_id = ?", created.ID).Find(&userRoles).Error; err != nil {
+		t.Fatalf("query created user roles failed: %v", err)
+	}
+	if len(userRoles) != 1 || userRoles[0].RoleID != roleID {
+		t.Fatalf("expected one created user role binding, got %+v", userRoles)
+	}
+	var userDepartments []models.UserDepartment
+	if err := database.Where("user_id = ?", created.ID).Find(&userDepartments).Error; err != nil {
+		t.Fatalf("query created user departments failed: %v", err)
+	}
+	if len(userDepartments) != 1 || userDepartments[0].DepartmentID != departmentID {
+		t.Fatalf("expected one created user department binding, got %+v", userDepartments)
+	}
+
+	detailRec := sendJSONRequest(t, router, http.MethodGet, fmt.Sprintf("/api/v1/users/%d", created.ID), adminToken, nil)
+	detailResp := assertOKResponse(t, detailRec)
+	var detail struct {
+		models.User
+		RoleIDs       []uint              `json:"roleIds"`
+		Roles         []models.Role       `json:"roles"`
+		DepartmentIDs []uint              `json:"departmentIds"`
+		Departments   []models.Department `json:"departments"`
+	}
+	if err := json.Unmarshal(detailResp.Data, &detail); err != nil {
+		t.Fatalf("unmarshal user detail failed: %v", err)
+	}
+	if detail.ID != created.ID || len(detail.Roles) != 1 || detail.Roles[0].ID != roleID || len(detail.Departments) != 1 || detail.Departments[0].ID != departmentID {
+		t.Fatalf("expected user detail includes bound role and department, got %+v", detail)
+	}
+
+	invalidRec := sendJSONRequest(t, router, http.MethodPost, "/api/v1/users", adminToken, map[string]any{
+		"username": "create-bound-invalid-user",
+		"password": "CreateBound@123",
+		"roleIds":  []uint{999999},
+	})
+	assertErrorResponse(t, invalidRec, http.StatusBadRequest, 3001, "roleIds contains invalid id")
+}
+
 func TestBindDepartmentUsersValidationIntegration(t *testing.T) {
 	router, database, _ := newRouterForIntegrationTest(t)
 	adminToken := loginAndGetToken(t, router, "admin", "Admin@123")

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -22,18 +23,54 @@ type departmentTreeNode struct {
 	Children []*departmentTreeNode `json:"children"`
 }
 
+type userDetailResponse struct {
+	models.User
+	RoleIDs       []uint              `json:"roleIds"`
+	Roles         []models.Role       `json:"roles"`
+	DepartmentIDs []uint              `json:"departmentIds"`
+	Departments   []models.Department `json:"departments"`
+}
+
 func (h *Handler) ListUsers(c *gin.Context) { listByModel[models.User](c, h.DB) }
-func (h *Handler) GetUser(c *gin.Context)   { getByID[models.User](c, h.DB) }
+
+func (h *Handler) GetUser(c *gin.Context) {
+	id, ok := parseID(c)
+	if !ok {
+		return
+	}
+	detail, err := h.userDetail(id)
+	if err != nil {
+		if isRecordNotFound(err) {
+			response.Error(c, http.StatusNotFound, appErr.ErrNotFound)
+			return
+		}
+		response.Internal(c, err)
+		return
+	}
+	response.Success(c, detail)
+}
 
 func (h *Handler) CreateUser(c *gin.Context) {
 	var req struct {
-		Username    string `json:"username" binding:"required"`
-		Password    string `json:"password" binding:"required"`
-		DisplayName string `json:"displayName"`
-		Email       string `json:"email"`
-		IsActive    *bool  `json:"isActive"`
+		Username      string `json:"username" binding:"required"`
+		Password      string `json:"password" binding:"required"`
+		DisplayName   string `json:"displayName"`
+		Email         string `json:"email"`
+		IsActive      *bool  `json:"isActive"`
+		RoleIDs       []uint `json:"roleIds"`
+		DepartmentIDs []uint `json:"departmentIds"`
 	}
 	if !bindJSON(c, &req) {
+		return
+	}
+	roleIDs, err := h.normalizeRoleIDs(req.RoleIDs)
+	if err != nil {
+		h.handleBindingIDError(c, err)
+		return
+	}
+	departmentIDs, err := h.normalizeDepartmentIDs(req.DepartmentIDs)
+	if err != nil {
+		h.handleBindingIDError(c, err)
 		return
 	}
 	hash, err := hashPassword(req.Password)
@@ -52,11 +89,24 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		Email:        req.Email,
 		IsActive:     isActive,
 	}
-	if err := h.DB.Create(&entity).Error; err != nil {
+	if err := h.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&entity).Error; err != nil {
+			return err
+		}
+		if err := replaceUserRoles(tx, entity.ID, roleIDs); err != nil {
+			return err
+		}
+		return replaceUserDepartments(tx, entity.ID, departmentIDs)
+	}); err != nil {
 		response.Internal(c, err)
 		return
 	}
-	response.Success(c, entity)
+	detail, err := h.userDetail(entity.ID)
+	if err != nil {
+		response.Internal(c, err)
+		return
+	}
+	response.Success(c, detail)
 }
 
 func (h *Handler) UpdateUser(c *gin.Context) {
@@ -150,44 +200,13 @@ func (h *Handler) BindUserRoles(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
-	if len(req.RoleIDs) > maxBindBatchSize {
-		response.Error(c, http.StatusBadRequest, appErr.New(3001, "roleIds exceeds maximum size 200"))
+	uniqueRoleIDs, err := h.normalizeRoleIDs(req.RoleIDs)
+	if err != nil {
+		h.handleBindingIDError(c, err)
 		return
 	}
-	uniqueRoleIDs := make([]uint, 0, len(req.RoleIDs))
-	seen := make(map[uint]struct{}, len(req.RoleIDs))
-	for _, roleID := range req.RoleIDs {
-		if roleID == 0 {
-			response.Error(c, http.StatusBadRequest, appErr.New(3001, "roleIds contains invalid id"))
-			return
-		}
-		if _, exists := seen[roleID]; exists {
-			continue
-		}
-		seen[roleID] = struct{}{}
-		uniqueRoleIDs = append(uniqueRoleIDs, roleID)
-	}
-	if len(uniqueRoleIDs) > 0 {
-		var count int64
-		if err := h.DB.Model(&models.Role{}).Where("id IN ?", uniqueRoleIDs).Count(&count).Error; err != nil {
-			response.Internal(c, err)
-			return
-		}
-		if count != int64(len(uniqueRoleIDs)) {
-			response.Error(c, http.StatusBadRequest, appErr.New(3001, "roleIds contains invalid id"))
-			return
-		}
-	}
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", id).Delete(&models.UserRole{}).Error; err != nil {
-			return err
-		}
-		for _, roleID := range uniqueRoleIDs {
-			if err := tx.Create(&models.UserRole{UserID: id, RoleID: roleID}).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		return replaceUserRoles(tx, id, uniqueRoleIDs)
 	}); err != nil {
 		response.Internal(c, err)
 		return
@@ -248,44 +267,13 @@ func (h *Handler) BindUserDepartments(c *gin.Context) {
 	if !bindJSON(c, &req) {
 		return
 	}
-	if len(req.DepartmentIDs) > maxBindBatchSize {
-		response.Error(c, http.StatusBadRequest, appErr.New(3001, "departmentIds exceeds maximum size 200"))
+	uniqueDepartmentIDs, err := h.normalizeDepartmentIDs(req.DepartmentIDs)
+	if err != nil {
+		h.handleBindingIDError(c, err)
 		return
 	}
-	uniqueDepartmentIDs := make([]uint, 0, len(req.DepartmentIDs))
-	seen := make(map[uint]struct{}, len(req.DepartmentIDs))
-	for _, departmentID := range req.DepartmentIDs {
-		if departmentID == 0 {
-			response.Error(c, http.StatusBadRequest, appErr.New(3001, "departmentIds contains invalid id"))
-			return
-		}
-		if _, exists := seen[departmentID]; exists {
-			continue
-		}
-		seen[departmentID] = struct{}{}
-		uniqueDepartmentIDs = append(uniqueDepartmentIDs, departmentID)
-	}
-	if len(uniqueDepartmentIDs) > 0 {
-		var count int64
-		if err := h.DB.Model(&models.Department{}).Where("id IN ?", uniqueDepartmentIDs).Count(&count).Error; err != nil {
-			response.Internal(c, err)
-			return
-		}
-		if count != int64(len(uniqueDepartmentIDs)) {
-			response.Error(c, http.StatusBadRequest, appErr.New(3001, "departmentIds contains invalid id"))
-			return
-		}
-	}
 	if err := h.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", id).Delete(&models.UserDepartment{}).Error; err != nil {
-			return err
-		}
-		for _, deptID := range uniqueDepartmentIDs {
-			if err := tx.Create(&models.UserDepartment{UserID: id, DepartmentID: deptID}).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		return replaceUserDepartments(tx, id, uniqueDepartmentIDs)
 	}); err != nil {
 		response.Internal(c, err)
 		return
@@ -359,6 +347,146 @@ func (h *Handler) GetDepartmentUsers(c *gin.Context) {
 		"userIds":    userIDs,
 		"users":      users,
 	})
+}
+
+func (h *Handler) userDetail(userID uint) (userDetailResponse, error) {
+	user, err := h.findUserOrNotFound(userID)
+	if err != nil {
+		return userDetailResponse{}, err
+	}
+	roleIDs, roles, err := h.userBoundRoles(userID)
+	if err != nil {
+		return userDetailResponse{}, err
+	}
+	departmentIDs, departments, err := h.userBoundDepartments(userID)
+	if err != nil {
+		return userDetailResponse{}, err
+	}
+	return userDetailResponse{
+		User:          user,
+		RoleIDs:       roleIDs,
+		Roles:         roles,
+		DepartmentIDs: departmentIDs,
+		Departments:   departments,
+	}, nil
+}
+
+func (h *Handler) userBoundRoles(userID uint) ([]uint, []models.Role, error) {
+	var roleIDs []uint
+	if err := h.DB.Table("user_roles").Where("user_id = ?", userID).Order("role_id asc").Pluck("role_id", &roleIDs).Error; err != nil {
+		return nil, nil, err
+	}
+	roles := []models.Role{}
+	if len(roleIDs) == 0 {
+		return roleIDs, roles, nil
+	}
+	if err := h.DB.Where("id IN ?", roleIDs).Order("id asc").Find(&roles).Error; err != nil {
+		return nil, nil, err
+	}
+	return roleIDs, roles, nil
+}
+
+func (h *Handler) userBoundDepartments(userID uint) ([]uint, []models.Department, error) {
+	var departmentIDs []uint
+	if err := h.DB.Table("user_departments").Where("user_id = ?", userID).Order("department_id asc").Pluck("department_id", &departmentIDs).Error; err != nil {
+		return nil, nil, err
+	}
+	departments := []models.Department{}
+	if len(departmentIDs) == 0 {
+		return departmentIDs, departments, nil
+	}
+	if err := h.DB.Where("id IN ?", departmentIDs).Order("id asc").Find(&departments).Error; err != nil {
+		return nil, nil, err
+	}
+	return departmentIDs, departments, nil
+}
+
+func (h *Handler) normalizeRoleIDs(roleIDs []uint) ([]uint, error) {
+	uniqueRoleIDs, err := normalizeBindingIDs(roleIDs, "roleIds")
+	if err != nil {
+		return nil, err
+	}
+	if len(uniqueRoleIDs) == 0 {
+		return uniqueRoleIDs, nil
+	}
+	var count int64
+	if err := h.DB.Model(&models.Role{}).Where("id IN ?", uniqueRoleIDs).Count(&count).Error; err != nil {
+		return nil, err
+	}
+	if count != int64(len(uniqueRoleIDs)) {
+		return nil, appErr.New(3001, "roleIds contains invalid id")
+	}
+	return uniqueRoleIDs, nil
+}
+
+func (h *Handler) normalizeDepartmentIDs(departmentIDs []uint) ([]uint, error) {
+	uniqueDepartmentIDs, err := normalizeBindingIDs(departmentIDs, "departmentIds")
+	if err != nil {
+		return nil, err
+	}
+	if len(uniqueDepartmentIDs) == 0 {
+		return uniqueDepartmentIDs, nil
+	}
+	var count int64
+	if err := h.DB.Model(&models.Department{}).Where("id IN ?", uniqueDepartmentIDs).Count(&count).Error; err != nil {
+		return nil, err
+	}
+	if count != int64(len(uniqueDepartmentIDs)) {
+		return nil, appErr.New(3001, "departmentIds contains invalid id")
+	}
+	return uniqueDepartmentIDs, nil
+}
+
+func (h *Handler) handleBindingIDError(c *gin.Context, err error) {
+	var appError appErr.AppError
+	if errors.As(err, &appError) {
+		response.Error(c, http.StatusBadRequest, appError)
+		return
+	}
+	response.Internal(c, err)
+}
+
+func normalizeBindingIDs(ids []uint, fieldName string) ([]uint, error) {
+	if len(ids) > maxBindBatchSize {
+		return nil, appErr.New(3001, fieldName+" exceeds maximum size 200")
+	}
+	uniqueIDs := make([]uint, 0, len(ids))
+	seen := make(map[uint]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			return nil, appErr.New(3001, fieldName+" contains invalid id")
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+	return uniqueIDs, nil
+}
+
+func replaceUserRoles(tx *gorm.DB, userID uint, roleIDs []uint) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&models.UserRole{}).Error; err != nil {
+		return err
+	}
+	for _, roleID := range roleIDs {
+		if err := tx.Create(&models.UserRole{UserID: userID, RoleID: roleID}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func replaceUserDepartments(tx *gorm.DB, userID uint, departmentIDs []uint) error {
+	if err := tx.Where("user_id = ?", userID).Delete(&models.UserDepartment{}).Error; err != nil {
+		return err
+	}
+	for _, departmentID := range departmentIDs {
+		if err := tx.Create(&models.UserDepartment{UserID: userID, DepartmentID: departmentID}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *Handler) BindDepartmentUsers(c *gin.Context) {

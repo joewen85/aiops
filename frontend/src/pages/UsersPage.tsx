@@ -1,5 +1,6 @@
 import { FormEvent, useMemo, useState, useEffect } from "react";
 
+import { listRoles } from "@/api/rbac";
 import {
   bindDepartmentUsers,
   bindUserDepartments,
@@ -199,6 +200,10 @@ export function UsersPage() {
   }, [visibleDepartmentColumnKeys]);
 
   useEffect(() => {
+    if (drawer.type === "user-create") {
+      void loadUserCreateOptions();
+      return;
+    }
     if (drawer.type === "user-edit" || drawer.type === "user-detail" || drawer.type === "user-reset-password") {
       void loadUserDetail(drawer.userId);
       return;
@@ -277,6 +282,22 @@ export function UsersPage() {
       setDepartmentTree(tree);
     } catch {
       showToast("部门树加载失败");
+    }
+  }
+
+  async function loadUserCreateOptions() {
+    setDrawerLoading(true);
+    try {
+      const [roleData, departmentData] = await Promise.all([
+        listRoles(1, 200),
+        listDepartments(1, 200),
+      ]);
+      setBindingRoles(roleData.list ?? []);
+      setBindingDepartments(departmentData.list ?? []);
+    } catch {
+      showToast("角色或部门选项加载失败");
+    } finally {
+      setDrawerLoading(false);
     }
   }
 
@@ -363,6 +384,10 @@ export function UsersPage() {
 
   function openUserCreateDrawer() {
     setUserForm(defaultUserForm());
+    setSelectedRoleIds([]);
+    setSelectedDepartmentIds([]);
+    setBindingRoles([]);
+    setBindingDepartments([]);
     setDrawer({ type: "user-create" });
   }
 
@@ -476,6 +501,8 @@ export function UsersPage() {
           displayName,
           email,
           isActive: userForm.isActive,
+          roleIds: selectedRoleIds,
+          departmentIds: selectedDepartmentIds,
         });
         showToast("用户创建成功");
         if (userPage === 1) {
@@ -1152,6 +1179,46 @@ export function UsersPage() {
                     <option value="1">启用</option>
                     <option value="0">停用</option>
                   </select>
+                  {drawer.type === "user-create" && (
+                    <>
+                      <div className="rbac-form-section-title">
+                        <strong>绑定角色</strong>
+                        <span className="muted">创建时可直接绑定一个或多个角色。</span>
+                      </div>
+                      <div className="rbac-kv-grid">
+                        {bindingRoles.length === 0 && <p className="muted">暂无可选角色</p>}
+                        {bindingRoles.map((role) => (
+                          <label className="permission-item cursor-pointer" key={role.id}>
+                            <input
+                              type="checkbox"
+                              checked={selectedRoleIds.includes(role.id)}
+                              onChange={() => toggleRoleSelection(role.id)}
+                            />
+                            <span>{role.name}</span>
+                            <small className="muted">{role.description || "-"}</small>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="rbac-form-section-title">
+                        <strong>绑定部门</strong>
+                        <span className="muted">创建时可直接绑定用户所属部门。</span>
+                      </div>
+                      <div className="rbac-kv-grid">
+                        {bindingDepartments.length === 0 && <p className="muted">暂无可选部门</p>}
+                        {bindingDepartments.map((department) => (
+                          <label className="permission-item cursor-pointer" key={department.id}>
+                            <input
+                              type="checkbox"
+                              checked={selectedDepartmentIds.includes(department.id)}
+                              onChange={() => toggleDepartmentSelection(department.id)}
+                            />
+                            <span>{department.name}</span>
+                            <small className="muted">parentId: {department.parentId || "-"}</small>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
                   <button className="btn primary cursor-pointer" type="submit" disabled={submitting}>
                     {submitting ? "保存中..." : "保存"}
                   </button>
@@ -1226,6 +1293,52 @@ export function UsersPage() {
                       <strong>{formatDateTime(userDetail.updatedAt)}</strong>
                     </div>
                   </div>
+                  <section className="rbac-detail-stack">
+                    <div className="rbac-header-row">
+                      <h4>已绑定角色</h4>
+                      <PermissionButton
+                        permissionKey="button.users.user.bind_roles"
+                        className="btn ghost cursor-pointer"
+                        type="button"
+                        onClick={() => openUserBindRolesDrawer(userDetail.id)}
+                      >
+                        调整角色
+                      </PermissionButton>
+                    </div>
+                    <div className="rbac-kv-grid">
+                      {(userDetail.roles ?? []).length === 0 && <p className="muted">暂无绑定角色</p>}
+                      {(userDetail.roles ?? []).map((role) => (
+                        <div key={role.id}>
+                          <span className="muted">#{role.id}</span>
+                          <strong>{role.name}</strong>
+                          <small className="muted">{role.description || "-"}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                  <section className="rbac-detail-stack">
+                    <div className="rbac-header-row">
+                      <h4>已绑定部门</h4>
+                      <PermissionButton
+                        permissionKey="button.users.user.bind_departments"
+                        className="btn ghost cursor-pointer"
+                        type="button"
+                        onClick={() => openUserBindDepartmentsDrawer(userDetail.id)}
+                      >
+                        调整部门
+                      </PermissionButton>
+                    </div>
+                    <div className="rbac-kv-grid">
+                      {(userDetail.departments ?? []).length === 0 && <p className="muted">暂无绑定部门</p>}
+                      {(userDetail.departments ?? []).map((department) => (
+                        <div key={department.id}>
+                          <span className="muted">#{department.id}</span>
+                          <strong>{department.name}</strong>
+                          <small className="muted">parentId: {department.parentId || "-"}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 </div>
               )}
 

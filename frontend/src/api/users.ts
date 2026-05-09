@@ -25,6 +25,8 @@ export async function createUser(payload: {
   displayName?: string;
   email?: string;
   isActive?: boolean;
+  roleIds?: number[];
+  departmentIds?: number[];
 }): Promise<UserItem> {
   const { data } = await apiClient.post<ApiResponse<UserItem>>("/users", payload);
   return data.data;

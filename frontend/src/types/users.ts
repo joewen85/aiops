@@ -6,6 +6,10 @@ export interface UserItem {
   displayName?: string;
   email?: string;
   isActive: boolean;
+  roleIds?: number[];
+  roles?: RoleItem[];
+  departmentIds?: number[];
+  departments?: DepartmentListItem[];
   createdAt?: string;
   updatedAt?: string;
 }
