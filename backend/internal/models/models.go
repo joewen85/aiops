@@ -474,9 +474,77 @@ type ObservabilitySource struct {
 
 type KubernetesCluster struct {
 	BaseModel
-	Name       string `gorm:"size:128;not null" json:"name"`
-	APIServer  string `gorm:"size:255;not null" json:"apiServer"`
-	KubeConfig string `gorm:"type:text;not null" json:"kubeConfig"`
+	Name                 string            `gorm:"size:128;not null" json:"name"`
+	APIServer            string            `gorm:"size:255;not null" json:"apiServer"`
+	KubeConfig           string            `gorm:"type:text" json:"-"`
+	CredentialType       string            `gorm:"size:32;default:kubeconfig" json:"credentialType"`
+	Env                  string            `gorm:"size:32;index;default:prod" json:"env"`
+	Region               string            `gorm:"size:64;index" json:"region"`
+	Owner                string            `gorm:"size:128;index" json:"owner"`
+	Status               string            `gorm:"size:32;index;default:unknown" json:"status"`
+	Version              string            `gorm:"size:64" json:"version"`
+	Labels               datatypes.JSONMap `gorm:"type:jsonb" json:"labels"`
+	Metadata             datatypes.JSONMap `gorm:"type:jsonb" json:"metadata"`
+	LastCheckedAt        *time.Time        `gorm:"index" json:"lastCheckedAt,omitempty"`
+	LastSyncedAt         *time.Time        `gorm:"index" json:"lastSyncedAt,omitempty"`
+	CertificateExpiresAt *time.Time        `gorm:"index" json:"certificateExpiresAt,omitempty"`
+}
+
+type KubernetesCredential struct {
+	BaseModel
+	ClusterID  uint       `gorm:"uniqueIndex;not null" json:"clusterId"`
+	Type       string     `gorm:"size:32;default:kubeconfig" json:"type"`
+	KubeConfig string     `gorm:"type:text" json:"-"`
+	Token      string     `gorm:"type:text" json:"-"`
+	KeyVersion string     `gorm:"size:32;default:v1" json:"keyVersion"`
+	RotatedAt  *time.Time `gorm:"index" json:"rotatedAt,omitempty"`
+}
+
+type KubernetesResourceSnapshot struct {
+	BaseModel
+	ClusterID       uint              `gorm:"index;not null" json:"clusterId"`
+	Namespace       string            `gorm:"size:128;index" json:"namespace"`
+	Kind            string            `gorm:"size:64;index;not null" json:"kind"`
+	Name            string            `gorm:"size:255;index;not null" json:"name"`
+	UID             string            `gorm:"size:128;index" json:"uid"`
+	Status          string            `gorm:"size:64;index" json:"status"`
+	SpecSummary     string            `gorm:"size:512" json:"specSummary"`
+	ResourceVersion string            `gorm:"size:128" json:"resourceVersion"`
+	Labels          datatypes.JSONMap `gorm:"type:jsonb" json:"labels"`
+	Metadata        datatypes.JSONMap `gorm:"type:jsonb" json:"metadata"`
+	LastSyncedAt    time.Time         `gorm:"index" json:"lastSyncedAt"`
+}
+
+type KubernetesOperation struct {
+	BaseModel
+	TraceID      string            `gorm:"size:64;index;not null" json:"traceId"`
+	ClusterID    uint              `gorm:"index;not null" json:"clusterId"`
+	Namespace    string            `gorm:"size:128;index" json:"namespace"`
+	Kind         string            `gorm:"size:64;index;not null" json:"kind"`
+	Name         string            `gorm:"size:255;index" json:"name"`
+	Action       string            `gorm:"size:64;index;not null" json:"action"`
+	Status       string            `gorm:"size:32;index;not null" json:"status"`
+	DryRun       bool              `gorm:"index;default:true" json:"dryRun"`
+	RiskLevel    string            `gorm:"size:16;index;default:P2" json:"riskLevel"`
+	Request      datatypes.JSONMap `gorm:"type:jsonb" json:"request"`
+	Result       datatypes.JSONMap `gorm:"type:jsonb" json:"result"`
+	ErrorMessage string            `gorm:"type:text" json:"errorMessage"`
+	StartedAt    *time.Time        `gorm:"index" json:"startedAt,omitempty"`
+	FinishedAt   *time.Time        `gorm:"index" json:"finishedAt,omitempty"`
+}
+
+type KubernetesEvent struct {
+	BaseModel
+	ClusterID   uint       `gorm:"index;not null" json:"clusterId"`
+	Namespace   string     `gorm:"size:128;index" json:"namespace"`
+	Kind        string     `gorm:"size:64;index" json:"kind"`
+	Name        string     `gorm:"size:255;index" json:"name"`
+	Reason      string     `gorm:"size:128;index" json:"reason"`
+	Type        string     `gorm:"size:32;index" json:"type"`
+	Message     string     `gorm:"type:text" json:"message"`
+	Count       int        `gorm:"default:1" json:"count"`
+	FirstSeenAt *time.Time `gorm:"index" json:"firstSeenAt,omitempty"`
+	LastSeenAt  *time.Time `gorm:"index" json:"lastSeenAt,omitempty"`
 }
 
 type AIAgentConfig struct {
@@ -554,6 +622,10 @@ func AutoMigrateModels() []interface{} {
 		&MiddlewareOperationLog{},
 		&ObservabilitySource{},
 		&KubernetesCluster{},
+		&KubernetesCredential{},
+		&KubernetesResourceSnapshot{},
+		&KubernetesOperation{},
+		&KubernetesEvent{},
 		&AIAgentConfig{},
 		&AIModelConfig{},
 		&AuditLog{},

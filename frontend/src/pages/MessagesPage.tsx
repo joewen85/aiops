@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { createMessage, listMessages, markMessageRead } from "@/api/messages";
 import type { PageData } from "@/api/types";
+import { Pagination } from "@/components/Pagination";
 import { PermissionButton } from "@/components/PermissionButton";
 import { ListRowActions } from "@/components/RowActionOverflow";
 import { TableSettingsModal } from "@/components/TableSettingsModal";
@@ -353,26 +354,18 @@ export function MessagesPage() {
           </table>
         </div>
 
-        <div className="rbac-pagination">
-          <div className="rbac-pagination-group">
-            <button className="btn ghost" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>上一页</button>
-            <span className="rbac-pagination-text">{page} / {totalPages}</span>
-            <button className="btn ghost" disabled={page >= totalPages} onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}>下一页</button>
-          </div>
-          <div className="rbac-pagination-group">
-            <span className="muted">每页</span>
-            <select
-              className="rbac-pagination-select"
-              value={pageSize}
-              onChange={(event) => {
-                setPageSize(Number(event.target.value));
-                setPage(1);
-              }}
-            >
-              {pageSizeOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </div>
-        </div>
+        <Pagination
+          total={data.total}
+          page={page}
+          pageSize={pageSize}
+          totalPages={totalPages}
+          pageSizeOptions={pageSizeOptions}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
       </article>
 
       {drawerOpen && (

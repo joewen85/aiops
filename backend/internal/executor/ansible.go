@@ -51,6 +51,10 @@ func (r Runner) Run(req Request) Result {
 			Status:   "failed",
 		}
 	}
+	defer func() {
+		_ = os.Remove(inventoryPath)
+		_ = os.Remove(playbookPath)
+	}()
 
 	args := []string{"-i", inventoryPath, playbookPath}
 	if req.CheckOnly {

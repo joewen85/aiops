@@ -8,6 +8,7 @@ import { CMDBPage } from "@/pages/CMDBPage";
 import { CloudPage } from "@/pages/CloudPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DockerPage } from "@/pages/DockerPage";
+import { KubernetesPage } from "@/pages/KubernetesPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MessagesPage } from "@/pages/MessagesPage";
 import { MiddlewarePage } from "@/pages/MiddlewarePage";
@@ -41,7 +42,7 @@ export const router = createBrowserRouter([
           { path: "docker", element: withMenuGuard("menu.docker", <DockerPage />) },
           { path: "middleware", element: withMenuGuard("menu.middleware", <MiddlewarePage />) },
           { path: "observability", element: withMenuGuard("menu.observability", <ModulePage />) },
-          { path: "kubernetes", element: withMenuGuard("menu.kubernetes", <ModulePage />) },
+          { path: "kubernetes", element: withMenuGuard("menu.kubernetes", <KubernetesPage />) },
           { path: "events", element: withMenuGuard("menu.events", <ModulePage />) },
           { path: "tools", element: withMenuGuard("menu.tools", <ModulePage />) },
           { path: "aiops", element: withMenuGuard("menu.aiops", <ModulePage />) },

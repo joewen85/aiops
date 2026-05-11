@@ -5,6 +5,8 @@ interface DeleteConfirmModalProps {
   title?: string;
   description?: string;
   confirmText?: string;
+  confirmActionLabel?: string;
+  confirmingLabel?: string;
   confirming?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -15,6 +17,8 @@ export function DeleteConfirmModal({
   title = "删除确认",
   description = "请输入确认文案后执行删除操作。",
   confirmText = "确认删除资源",
+  confirmActionLabel = "确认删除",
+  confirmingLabel = "删除中...",
   confirming = false,
   onCancel,
   onConfirm,
@@ -61,7 +65,7 @@ export function DeleteConfirmModal({
               取消
             </button>
             <button className="btn cursor-pointer" type="submit" disabled={!canConfirm}>
-              {confirming ? "删除中..." : "确认删除"}
+              {confirming ? confirmingLabel : confirmActionLabel}
             </button>
           </div>
         </form>
